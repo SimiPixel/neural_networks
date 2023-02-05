@@ -37,6 +37,8 @@ setuptools.setup(
     include_package_data=True,
     install_requires=[
         "joblib",
-        "neptune-client",
+        "neptune-client",  # TODO well not for now..
+        "x_xy @ git+https://github.com/SimiPixel/x_xy.git",
+        "dm-haiku",
     ],  # additional dependencies are handeled per network / folder
 )

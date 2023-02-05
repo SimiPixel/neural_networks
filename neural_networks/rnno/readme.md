@@ -37,4 +37,3 @@ y = {
 ## Dependencies
 - `x_xy`
 - `dm-haiku`
-- `tree_utils`
