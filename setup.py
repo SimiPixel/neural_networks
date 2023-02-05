@@ -32,7 +32,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     version="0.1.0",
     package_data={
-        "neural_networks": find_data_files("neural_networks", patterns=["*.xml"])
+        "neural_networks": find_data_files("neural_networks", patterns=["*.joblib"])
     },
     include_package_data=True,
     install_requires=[
