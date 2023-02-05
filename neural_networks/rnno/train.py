@@ -17,23 +17,20 @@ from neural_networks.rnno.optimizer import adam
 default_metrices = {
     "rmse_deg": (
         lambda q, qhat: angle_error(q, qhat) ** 2,
+        # we reduce time at axis=1, and batchsize at axis=0
         lambda arr: jnp.rad2deg(jnp.mean(jnp.sqrt(jnp.mean(arr, axis=1)), axis=0)),
     ),
     "mae_deg": (
         lambda q, qhat: jnp.abs(angle_error(q, qhat)),
-        lambda arr: jnp.rad2deg(jnp.mean(jnp.sqrt(jnp.mean(arr, axis=1)), axis=0)),
+        lambda arr: jnp.rad2deg(jnp.mean(arr, axis=(0, 1))),
     ),
     "q90_ae_deg": (
-        lambda q, qhat: angle_error(q, qhat) ** 2,
-        lambda arr: jnp.rad2deg(
-            jnp.mean(jnp.sqrt(jnp.quantile(arr, 0.90, axis=1)), axis=0)
-        ),
+        lambda q, qhat: jnp.abs(angle_error(q, qhat)),
+        lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.90, axis=1), axis=0)),
     ),
     "q99_ae_deg": (
-        lambda q, qhat: angle_error(q, qhat) ** 2,
-        lambda arr: jnp.rad2deg(
-            jnp.mean(jnp.sqrt(jnp.quantile(arr, 0.99, axis=1)), axis=0)
-        ),
+        lambda q, qhat: jnp.abs(angle_error(q, qhat)),
+        lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.99, axis=1), axis=0)),
     ),
 }
 
