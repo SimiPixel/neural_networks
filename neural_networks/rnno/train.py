@@ -148,15 +148,14 @@ def train(
 
         if eval_dustin_exp_every != -1:
             if (i_episode % eval_dustin_exp_every) == 0:
-                metrices.update(
-                    flatten_dict(
-                        {
-                            "dustin_exp": eval_fn_dustin_exp(
-                                params, sample_dustin_exp["X"], sample_dustin_exp["y"]
-                            )
-                        }
-                    )
+                dustin_exp_eval_metrices = flatten_dict(
+                    {
+                        "dustin_exp": eval_fn_dustin_exp(
+                            params, sample_dustin_exp["X"], sample_dustin_exp["y"]
+                        )
+                    }
                 )
+            metrices.update(dustin_exp_eval_metrices)
 
         for callback in callbacks:
             # TODO
