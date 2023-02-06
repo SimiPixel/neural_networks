@@ -246,6 +246,12 @@ def _build_step_fn(
         loss_with_pmap_dim, state = loss_fn(params, state, X, y)
         return jnp.mean(loss_with_pmap_dim, axis=0), state
 
+    @jax.jit
+    def opt_update_fn(grads, opt_state, params):
+        updates, opt_state = optimizer.update(grads, opt_state, params)
+        params = optax.apply_updates(params, updates)
+        return params, opt_state
+
     def step_fn(params, opt_state, X, y):
         X, y = expand_batchsize((X, y), pmap_size, vmap_size)
 
@@ -255,9 +261,7 @@ def _build_step_fn(
         for X_tbp, y_tbp in tree_utils.tree_split((X, y), int(N / tbp), axis=-2):
             (loss_value, state), grads = grad_loss_fn(params.fast, state, X_tbp, y_tbp)
             state = jax.lax.stop_gradient(state)
-
-            updates, opt_state = optimizer.update(grads, opt_state, params)
-            params = optax.apply_updates(params, updates)
+            params, opt_state = opt_update_fn(grads, opt_state, params)
 
         return params, opt_state, {"loss": loss_value}
 
