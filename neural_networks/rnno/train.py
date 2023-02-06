@@ -122,7 +122,7 @@ def train(
 
     # compile step fn and eval fn
     if jit:
-        step_fn = jax.jit(step_fn)
+        # step_fn = jax.jit(step_fn)
         eval_fn = jax.jit(eval_fn)
         if eval_dustin_exp_every != -1:
             eval_fn_dustin_exp = jax.jit(eval_fn_dustin_exp)
