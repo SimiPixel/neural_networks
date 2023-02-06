@@ -1,10 +1,9 @@
+import jax
 from x_xy import rcmg, rcmg_callbacks
 from x_xy.examples.three_segments import three_segment_system
 
 from neural_networks.logging import NeptuneLogger
 from neural_networks.rnno import RNNO_Config, rnno_network, train
-
-logger = NeptuneLogger("iss/social-rnno", name="my fancy run..")
 
 
 def three_segment_generator():
@@ -13,6 +12,7 @@ def three_segment_generator():
     T = 60
     Ts = 0.01
 
+    @jax.jit
     def generator(key):
         return rcmg.rcmg(
             key,
@@ -35,7 +35,7 @@ def three_segment_generator():
 
 
 def main():
-
+    logger = NeptuneLogger("iss/social-rnno", name="my fancy run..")
     generator = three_segment_generator()
 
     network = rnno_network()
@@ -49,4 +49,5 @@ def main():
     )
 
 
-main()
+if __name__ == "__main__":
+    main()
