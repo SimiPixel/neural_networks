@@ -18,7 +18,7 @@ def generator_dustin_exp(*args):
     # transform raw data to required format which is
     # {"X": {0: {"acc": ..., "gyr"}, 2: {...}}, "y": {2: ..., 1: ...}}
 
-    qrel = lambda q1, q2: maths.quat_inv(maths.quat_mul(maths.quat_inv(q1), q2))
+    qrel = lambda q1, q2: maths.quat_mul(maths.quat_inv(q1), q2)
     data = {
         "X": {
             0: {"acc": dd["acc1"], "gyr": dd["gyr1"]},
