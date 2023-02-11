@@ -84,7 +84,10 @@ def rnno_network_local(
         qs = jax.tree_map(safe_normalize, [q for q in ys[1:]])
 
         # order is reversed due to top-bottom scan
-        node_nrs = list(range(N - 1, 0, -1))
+        # TODO
+        # in graph_filter.py i did not realize this
+        # node_nrs = list(range(N - 1, 0, -1))
+        node_nrs = list(range(1, N))
         return dict(zip(node_nrs, qs))
 
     def init(key, X):
