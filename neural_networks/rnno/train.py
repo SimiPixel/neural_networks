@@ -1,8 +1,7 @@
-from dataclasses import dataclass, field
 from functools import partial
-from types import SimpleNamespace
-from typing import Callable
+from typing import Callable, Tuple
 
+import haiku as hk
 import jax
 import jax.numpy as jnp
 import optax
@@ -10,174 +9,190 @@ import tree_utils
 from x_xy import maths
 from x_xy.rcmg import distribute_batchsize, expand_batchsize
 
-from neural_networks.logging import Logger, flatten_dict, n_params
-from neural_networks.rnno import generator_dustin_exp
-from neural_networks.rnno.optimizer import adam
+from neural_networks.logging import NeptuneLogger, flatten_dict
+from neural_networks.rnno.dustin_exp.dustin_exp import generator_dustin_exp
+from neural_networks.rnno.training_loop import TrainingLoop, TrainingLoopCallback
+
+from .optimizer import adam
 
 default_metrices = {
+    "mae_deg": (
+        lambda q, qhat: maths.quat_angle_error(q, qhat),
+        lambda arr: jnp.rad2deg(jnp.mean(arr, axis=(0, 1))),
+    ),
     "rmse_deg": (
-        lambda q, qhat: angle_error(q, qhat) ** 2,
+        lambda q, qhat: maths.quat_angle_error(q, qhat) ** 2,
         # we reduce time at axis=1, and batchsize at axis=0
         lambda arr: jnp.rad2deg(jnp.mean(jnp.sqrt(jnp.mean(arr, axis=1)), axis=0)),
     ),
-    "mae_deg": (
-        lambda q, qhat: jnp.abs(angle_error(q, qhat)),
-        lambda arr: jnp.rad2deg(jnp.mean(arr, axis=(0, 1))),
-    ),
     "q90_ae_deg": (
-        lambda q, qhat: jnp.abs(angle_error(q, qhat)),
+        lambda q, qhat: maths.quat_angle_error(q, qhat),
         lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.90, axis=1), axis=0)),
     ),
     "q99_ae_deg": (
-        lambda q, qhat: jnp.abs(angle_error(q, qhat)),
+        lambda q, qhat: maths.quat_angle_error(q, qhat),
         lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.99, axis=1), axis=0)),
     ),
 }
 
 
-@dataclass
-class RNNO_Config:
-    n_episodes: int
-    tbp: int = 1000
-    key: jax.Array = jax.random.PRNGKey(1)
-    loss_metric: Callable = lambda q, qhat: angle_error(q, qhat) ** 2
-    eval_metrices: dict[str, tuple] = field(default_factory=lambda: default_metrices)
+def _warm_up_doesnot_count(arr):
+    return arr[:, 500:]
 
 
-def train(
-    generator: Callable,
-    network: Callable,
-    config: RNNO_Config,
-    loggers: list[Logger],
-    eval_dustin_exp_every: int = -1,
-    network_dustin=None,
-    callbacks: list[Callable] = [],
-    jit: bool = True,
-) -> Callable:
+default_metrices_dustin_exp = {
+    "mae_deg": (
+        lambda q, qhat: maths.quat_angle_error(q, qhat),
+        lambda arr: jnp.rad2deg(jnp.mean(_warm_up_doesnot_count(arr), axis=(0, 1))),
+    ),
+    "rmse_deg": (
+        lambda q, qhat: maths.quat_angle_error(q, qhat) ** 2,
+        # we reduce time at axis=1, and batchsize at axis=0
+        lambda arr: jnp.rad2deg(
+            jnp.mean(jnp.sqrt(jnp.mean(_warm_up_doesnot_count(arr), axis=1)), axis=0)
+        ),
+    ),
+    "q90_ae_deg": (
+        lambda q, qhat: maths.quat_angle_error(q, qhat),
+        lambda arr: jnp.rad2deg(
+            jnp.mean(jnp.quantile(_warm_up_doesnot_count(arr), 0.90, axis=1), axis=0)
+        ),
+    ),
+}
 
-    if jit:
-        generator = jax.jit(generator)
+default_loss_fn = lambda q, qhat: maths.quat_angle_error(q, qhat) ** 2
 
-    key, consume = jax.random.split(config.key)
-    # initialize params, state, opt_state
-    sample_toy = generator(config.key)
-    batchsize = tree_utils.tree_shape(sample_toy, 0)
-    N = tree_utils.tree_shape(sample_toy, 1)
 
-    # delete batchsize dimension for init of params
-    params, state = network.init(
-        consume, jax.tree_map(lambda arr: arr[0], sample_toy["X"])
+def _build_eval_fn(
+    eval_metrices: dict[str, Tuple[Callable, Callable]],
+    apply_fn,
+    initial_state,
+    pmap_size,
+    vmap_size,
+):
+    """Build function that evaluates the filter performance.
+    `initial_state` has shape (pmap, vmap, state_dim)"""
+
+    def eval_fn(params, state, X, y):
+        yhat, _ = jax.vmap(apply_fn, in_axes=(None, 0, 0))(params, state, X)
+
+        values = {}
+        for metric_name, (metric_fn, reduce_fn) in eval_metrices.items():
+            assert (
+                metric_name not in values
+            ), f"The metric identitifier {metric_name} is not unique"
+
+            pipe = lambda q, qhat: reduce_fn(jax.vmap(jax.vmap(metric_fn))(q, qhat))
+            values.update({metric_name: jax.tree_map(pipe, y, yhat)})
+
+        return values
+
+    @partial(jax.pmap, in_axes=(None, 0, 0, 0), out_axes=None, axis_name="devices")
+    def pmapped_eval_fn(params, state, X, y):
+        pmean = lambda arr: jax.lax.pmean(arr, axis_name="devices")
+        values = eval_fn(params.slow, state, X, y)
+        return pmean(values)
+
+    def expand_then_pmap_eval_fn(params, X, y):
+        X, y = expand_batchsize((X, y), pmap_size, vmap_size)
+        return pmapped_eval_fn(params, initial_state, X, y)
+
+    return expand_then_pmap_eval_fn
+
+
+def _build_step_fn(
+    metric_fn,
+    apply_fn,
+    initial_state,
+    pmap_size,
+    vmap_size,
+    optimizer,
+    tbp,
+):
+    """Build step function that optimizes filter parameters based on `metric_fn`.
+    `initial_state` has shape (pmap, vmap, state_dim)"""
+
+    @partial(jax.value_and_grad, has_aux=True)
+    def loss_fn(params, state, X, y):
+        yhat, state = jax.vmap(apply_fn, in_axes=(None, 0, 0))(params, state, X)
+        pipe = lambda q, qhat: jnp.mean(jax.vmap(jax.vmap(metric_fn))(q, qhat))
+        error_tree = jax.tree_map(pipe, y, yhat)
+        return jnp.mean(tree_utils.batch_concat(error_tree, 0)), state
+
+    @partial(
+        jax.pmap,
+        in_axes=(None, 0, 0, 0),
+        out_axes=((None, 0), None),
+        axis_name="devices",
     )
+    def pmapped_loss_fn(params, state, X, y):
+        pmean = lambda arr: jax.lax.pmean(arr, axis_name="devices")
+        (loss, state), grads = loss_fn(params.fast, state, X, y)
+        return (pmean(loss), state), pmean(grads)
 
-    for logger in loggers:
-        logger.log(dict(n_params=n_params(params), batchsize=batchsize))
+    @jax.jit
+    def apply_grads(grads, params, opt_state):
+        updates, opt_state = optimizer.update(grads, opt_state, params)
+        params = optax.apply_updates(params, updates)
+        return params, opt_state
 
-    # we assume every optimizer uses lookahead
-    params = optax.LookaheadParams(params, params)
-    opt = _build_optimizer(config.n_episodes, config.tbp, N)
-    opt_state = opt.init(params)
+    def step_fn(params, opt_state, X, y):
+        N = tree_utils.tree_shape(X, axis=-2)
+        X, y = expand_batchsize((X, y), pmap_size, vmap_size)
+        nonlocal initial_state
 
-    pmap_size, vmap_size = distribute_batchsize(batchsize)
+        state = initial_state
+        for X_tbp, y_tbp in tree_utils.tree_split((X, y), int(N / tbp), axis=-2):
+            (loss, state), grads = pmapped_loss_fn(params, state, X_tbp, y_tbp)
+            state = jax.lax.stop_gradient(state)
+            params, opt_state = apply_grads(grads, params, opt_state)
 
-    # build step fn
-    step_fn = _build_step_fn(
-        config.loss_metric,
-        network.apply,
-        state,
-        pmap_size,
-        vmap_size,
-        opt,
-        config.tbp,
-        N,
-    )
+        return params, opt_state, {"loss": loss}
 
-    # build eval fn
-    eval_fn = _build_eval_fn(
-        config.eval_metrices, network.apply, state, pmap_size, vmap_size
-    )
+    return step_fn
 
-    # build eval fn for dustin exp
-    if eval_dustin_exp_every != -1:
-        assert (
-            network_dustin is not None
-        ), "Can only evaluate dustin experiment if network is given"
-        sample_dustin_exp = generator_dustin_exp()
+
+class EvalFnCallback(TrainingLoopCallback):
+    def __init__(self, eval_fn):
+        self.eval_fn = eval_fn
+
+    def after_training_step(self, i_episode: int, metrices: dict, params, sample_eval):
+        metrices.update(self.eval_fn(params, sample_eval["X"], sample_eval["y"]))
+
+
+class DustinExperiment(TrainingLoopCallback):
+    def __init__(
+        self, network: hk.TransformedWithState, eval_dustin_exp_every: int = -1
+    ):
+        self.sample = generator_dustin_exp()
+
         # build network for dustin experiment which always
         # has 3 segments; Needs its own state
         # delete batchsize dimension for init of params
-        key, consume = jax.random.split(key)
-        _, state_network_dustin = network_dustin.init(
-            consume, jax.tree_map(lambda arr: arr[0], sample_dustin_exp["X"])
+        consume = jax.random.PRNGKey(1)
+        _, initial_state_dustin = network.init(
+            consume, tree_utils.tree_slice(self.sample["X"], 0)
         )
-        pmap_size_dustin, vmap_size_dustin = distribute_batchsize(
-            tree_utils.tree_shape(sample_dustin_exp)
+        batchsize = tree_utils.tree_shape(self.sample)
+        initial_state_dustin = _repeat_state(initial_state_dustin, batchsize)
+        self.eval_fn = _build_eval_fn(
+            default_metrices_dustin_exp,
+            network.apply,
+            initial_state_dustin,
+            *distribute_batchsize(batchsize),
         )
-        eval_fn_dustin_exp = _build_eval_fn(
-            config.eval_metrices,
-            network_dustin.apply,
-            state_network_dustin,
-            pmap_size_dustin,
-            vmap_size_dustin,
-        )
+        self.eval_dustin_exp_every = eval_dustin_exp_every
 
-    # compile step fn and eval fn
-    if jit:
-        # step_fn = jax.jit(step_fn)
-        eval_fn = jax.jit(eval_fn)
-        if eval_dustin_exp_every != -1:
-            eval_fn_dustin_exp = jax.jit(eval_fn_dustin_exp)
+    def after_training_step(self, i_episode: int, metrices: dict, params, sample_eval):
+        if self.eval_dustin_exp_every == -1:
+            return
 
-    # start training loop
-    key, consume = jax.random.split(key)
-    sample_eval = generator(consume)
+        if (i_episode % self.eval_dustin_exp_every) == 0:
+            self.last_metrices = flatten_dict(
+                {"dustin_exp": self.eval_fn(params, self.sample["X"], self.sample["y"])}
+            )
 
-    for i_episode in range(config.n_episodes):
-        sample_train = sample_eval
-        key, consume = jax.random.split(key)
-        sample_eval = generator(consume)
-
-        params, opt_state, loss = step_fn(
-            params, opt_state, sample_train["X"], sample_train["y"]
-        )
-        metrices = eval_fn(params, sample_eval["X"], sample_eval["y"])
-
-        metrices.update(loss)
-
-        if eval_dustin_exp_every != -1:
-            if (i_episode % eval_dustin_exp_every) == 0:
-                dustin_exp_eval_metrices = flatten_dict(
-                    {
-                        "dustin_exp": eval_fn_dustin_exp(
-                            params, sample_dustin_exp["X"], sample_dustin_exp["y"]
-                        )
-                    }
-                )
-            metrices.update(dustin_exp_eval_metrices)
-
-        for callback in callbacks:
-            # TODO
-            callback(i_episode, metrices, params.slow, network.apply)
-
-        for logger in loggers:
-            logger.log(metrices)
-
-            if i_episode == (config.n_episodes - 1):
-                logger.close()
-
-    @jax.jit
-    def final_predict(X):
-        """No batchsize!"""
-        return network.apply(params.slow, state, X)
-
-    @jax.jit
-    def final_eval(X, y):
-        """No batchsize!"""
-        X, y = tree_utils.add_batch_dim((X, y))
-        return _build_eval_fn(config.eval_metrices, network.apply, state, 1, 1)(
-            params.slow, X, y
-        )
-
-    return params.slow, SimpleNamespace(predict=final_predict, eval=final_eval)
+        metrices.update(self.last_metrices)
 
 
 def _build_optimizer(n_episodes, tbp, N):
@@ -185,88 +200,58 @@ def _build_optimizer(n_episodes, tbp, N):
     return adam(steps=n_episodes * steps)
 
 
-def _build_vmap_vmap_metric_fn(metric_fn: Callable, reduce_fn: Callable):
-    """Builds a metric function that is mapped accross batchsize on device and time.
-    - metric_fn: (y, yhat) -> point_estimate
-    - reduce_fn: (batchsize / n_devices, n_timesteps, point_estimate) -> point_estimate
-    """
-
-    def vmap_vmap_metric_fn(y, yhat):
-        metric_per_node = jax.tree_map(jax.vmap(jax.vmap(metric_fn)), y, yhat)
-        point_estimate_per_node = jax.tree_map(reduce_fn, metric_per_node)
-        return point_estimate_per_node
-
-    return vmap_vmap_metric_fn
+def _repeat_state(state, repeats: int):
+    pmap_size, vmap_size = distribute_batchsize(repeats)
+    return jax.vmap(jax.vmap(lambda _: state))(jnp.zeros((pmap_size, vmap_size)))
 
 
-def _build_eval_fn(eval_metrices, apply_fn, state, pmap_size, vmap_size):
-    def eval_fn(params, X, y):
-        X, y = expand_batchsize((X, y), pmap_size, vmap_size)
-
-        metrices_values = {}
-        for metric_name, (metric_fn, reduce_fn) in eval_metrices.items():
-
-            @jax.pmap
-            def point_estimate_per_node(X, y):
-                yhat = jax.vmap(lambda X: apply_fn(params.slow, state, X)[0])(X)
-                metric_per_node = _build_vmap_vmap_metric_fn(metric_fn, reduce_fn)(
-                    y, yhat
-                )
-                return metric_per_node
-
-            point_estimate = jax.tree_util.tree_map(
-                lambda arr: jnp.mean(arr, axis=0), point_estimate_per_node(X, y)
-            )
-            metrices_values.update({metric_name: point_estimate})
-
-        return metrices_values
-
-    return eval_fn
-
-
-def _build_step_fn(
-    metric_fn, apply_fn, initial_state, pmap_size, vmap_size, optimizer, tbp, N
+def train(
+    generator: Callable,
+    network: hk.TransformedWithState,
+    n_episodes: int,
+    run_name: str = None,
+    log_to_neptune: bool = True,
 ):
+    key = jax.random.PRNGKey(0)
+    sample = generator(key)
+    batchsize = tree_utils.tree_shape(sample)
+    N = tree_utils.tree_shape(sample, 1)
+    pmap_size, vmap_size = distribute_batchsize(batchsize)
 
-    # repeat state along batchsize
-    initial_state = jax.vmap(jax.vmap(lambda _: initial_state))(
-        jnp.zeros((pmap_size, vmap_size))
+    optimizer = _build_optimizer(n_episodes, 1000, N)
+
+    key, consume = jax.random.split(key)
+    initial_params, initial_state = network.init(
+        consume,
+        tree_utils.tree_slice(sample["X"], 0),
     )
-    reduce_fn = lambda arr: jnp.mean(arr, axis=(0, 1))
+    initial_state = _repeat_state(initial_state, batchsize)
 
-    @partial(jax.pmap, in_axes=(None, 0, 0, 0))
-    def loss_fn(params, state, X, y):
-        yhat, state = jax.vmap(lambda state, X: apply_fn(params, state, X))(state, X)
-        loss_per_node = _build_vmap_vmap_metric_fn(metric_fn, reduce_fn)(y, yhat)
-        mean_loss = jnp.mean(tree_utils.batch_concat(loss_per_node, 0), axis=0)
-        return mean_loss, state
+    initial_params = optax.LookaheadParams(initial_params, initial_params)
+    opt_state = optimizer.init(initial_params)
 
-    @partial(jax.value_and_grad, has_aux=True)
-    def grad_loss_fn(params, state, X, y):
-        loss_with_pmap_dim, state = loss_fn(params, state, X, y)
-        return jnp.mean(loss_with_pmap_dim, axis=0), state
+    step_fn = _build_step_fn(
+        default_loss_fn,
+        network.apply,
+        initial_state,
+        pmap_size,
+        vmap_size,
+        optimizer,
+        tbp=1000,
+    )
 
-    @jax.jit
-    def opt_update_fn(grads, opt_state, params):
-        updates, opt_state = optimizer.update(grads, opt_state, params)
-        params = optax.apply_updates(params, updates)
-        return params, opt_state
+    eval_fn = _build_eval_fn(
+        default_metrices, network.apply, initial_state, pmap_size, vmap_size
+    )
 
-    def step_fn(params, opt_state, X, y):
-        X, y = expand_batchsize((X, y), pmap_size, vmap_size)
+    loop = TrainingLoop(
+        key,
+        generator,
+        initial_params,
+        opt_state,
+        step_fn,
+        loggers=[NeptuneLogger("iss/social-rnno", run_name)] if log_to_neptune else [],
+        callbacks=[EvalFnCallback(eval_fn), DustinExperiment(network, 5)],
+    )
 
-        nonlocal initial_state
-
-        state = initial_state
-        for X_tbp, y_tbp in tree_utils.tree_split((X, y), int(N / tbp), axis=-2):
-            (loss_value, state), grads = grad_loss_fn(params.fast, state, X_tbp, y_tbp)
-            state = jax.lax.stop_gradient(state)
-            params, opt_state = opt_update_fn(grads, opt_state, params)
-
-        return params, opt_state, {"loss": loss_value}
-
-    return step_fn
-
-
-def angle_error(q, qhat):
-    return maths.quat_angle(maths.quat_mul(maths.quat_inv(q), qhat))
+    loop.run(n_episodes)
