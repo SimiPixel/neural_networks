@@ -9,7 +9,7 @@ N = 10287
 T = 6000
 
 
-def generator_dustin_exp(*args):
+def generator_dustin_exp():
     start_indices = jnp.array([start + 10 for start in range(3000, 4200, 150)])
 
     dd = joblib.load(Path(__file__).parent.resolve().joinpath("dustin_exp.joblib"))
@@ -24,7 +24,7 @@ def generator_dustin_exp(*args):
             0: {"acc": dd["acc1"], "gyr": dd["gyr1"]},
             2: {"acc": dd["acc3"], "gyr": dd["gyr3"]},
         },
-        "y": {2: qrel(dd["q2"], dd["q3"]), 1: qrel(dd["q1"], dd["q2"])},
+        "y": {1: qrel(dd["q1"], dd["q2"]), 2: qrel(dd["q2"], dd["q3"])},
     }
 
     @jax.vmap
