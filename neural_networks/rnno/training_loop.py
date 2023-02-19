@@ -34,7 +34,7 @@ class TrainingLoop:
         T = tree_utils.tree_shape(self._sample_eval, 1)
 
         for logger in loggers:
-            logger.log(dict(n_params=n_params(params), batchsize=batchsize, T=T))
+            logger.log(dict(n_params=n_params(params.fast), batchsize=batchsize, T=T))
 
     @property
     def key(self):
