@@ -218,7 +218,7 @@ def train(
     N = tree_utils.tree_shape(sample, 1)
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
-    optimizer = _build_optimizer(n_episodes, 1000, N)
+    optimizer = adam()  # _build_optimizer(n_episodes, 1000, N)
 
     key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
@@ -244,13 +244,14 @@ def train(
         default_metrices, network.apply, initial_state, pmap_size, vmap_size
     )
 
+    key, consume = jax.random.split(key)
     loop = TrainingLoop(
         key,
         generator,
         initial_params,
         opt_state,
         step_fn,
-        loggers=[NeptuneLogger("iss/social-rnno", run_name)] if log_to_neptune else [],
+        loggers=[NeptuneLogger("iss/rnno", run_name)] if log_to_neptune else [],
         callbacks=[EvalFnCallback(eval_fn), DustinExperiment(network, 5)],
     )
 
