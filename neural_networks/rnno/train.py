@@ -209,6 +209,7 @@ def train(
     generator: Callable,
     network: hk.TransformedWithState,
     n_episodes: int,
+    project_name: str = "rnno",
     run_name: str = None,
     log_to_neptune: bool = True,
 ):
@@ -218,7 +219,8 @@ def train(
     N = tree_utils.tree_shape(sample, 1)
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
-    optimizer = adam()  # _build_optimizer(n_episodes, 1000, N)
+    tbp = 1000
+    optimizer = _build_optimizer(n_episodes, tbp, N)
     key, consume = jax.random.split(key)
     key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
@@ -237,7 +239,7 @@ def train(
         pmap_size,
         vmap_size,
         optimizer,
-        tbp=1000,
+        tbp=tbp,
     )
 
     eval_fn = _build_eval_fn(
@@ -250,7 +252,9 @@ def train(
         initial_params,
         opt_state,
         step_fn,
-        loggers=[NeptuneLogger("iss/rnno", run_name)] if log_to_neptune else [],
+        loggers=[NeptuneLogger(f"iss/{project_name}", run_name)]
+        if log_to_neptune
+        else [],
         callbacks=[EvalFnCallback(eval_fn), DustinExperiment(network, 5)],
     )
 
