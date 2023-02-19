@@ -40,17 +40,16 @@ def rcmg_new(T, Ts, batchsize):
                     [6, 7], [0, 2], sys.gravity, Ts
                 ),
                 rcmg_callbacks.RCMG_Callback_qrel_to_parent([5, 7], [6, 5], [1, 2]),
-                rcmg_callbacks.RCMG_Callback_noise_and_bias([0, 2]),
+                rcmg_callbacks.RCMG_Callback_noise_and_bias(),
             ),
         )
 
     return generator
 
 
-def test_train():
+def test_train(batchsize=1):
     T = 10
     Ts = 0.01
-    batchsize = 1
 
     for generator in [
         rcmg_new(T, Ts, batchsize),
