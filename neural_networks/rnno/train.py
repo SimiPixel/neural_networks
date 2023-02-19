@@ -219,7 +219,7 @@ def train(
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
     optimizer = adam()  # _build_optimizer(n_episodes, 1000, N)
-
+    key, consume = jax.random.split(key)
     key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
         consume,
@@ -244,7 +244,6 @@ def train(
         default_metrices, network.apply, initial_state, pmap_size, vmap_size
     )
 
-    key, consume = jax.random.split(key)
     loop = TrainingLoop(
         key,
         generator,
