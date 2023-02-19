@@ -10,7 +10,7 @@ T = 6000
 
 
 def generator_dustin_exp():
-    start_indices = jnp.array([start + 10 for start in range(3000, 4200, 150)])
+    start_indices = jnp.array([start + 10 for start in range(3000, 4200, 100)])
 
     dd = joblib.load(Path(__file__).parent.resolve().joinpath("dustin_exp.joblib"))
     dd = jax.tree_map(jnp.asarray, dd)
