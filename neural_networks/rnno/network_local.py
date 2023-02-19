@@ -86,8 +86,8 @@ def rnno_network_local(
         # order is reversed due to top-bottom scan
         # TODO
         # in graph_filter.py i did not realize this
-        # node_nrs = list(range(N - 1, 0, -1))
-        node_nrs = list(range(1, N))
+        node_nrs = list(range(N - 1, 0, -1))
+        # node_nrs = list(range(1, N))
         return dict(zip(node_nrs, qs))
 
     def init(key, X):
