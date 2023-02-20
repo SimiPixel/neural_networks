@@ -207,12 +207,16 @@ def _repeat_state(state, repeats: int):
 
 def train(
     generator: Callable,
-    network: hk.TransformedWithState,
     n_episodes: int,
+    network: hk.TransformedWithState,
+    network_dustin=None,
     project_name: str = "rnno",
     run_name: str = None,
     log_to_neptune: bool = True,
 ):
+    if network_dustin is None:
+        network_dustin = network
+
     key = jax.random.PRNGKey(0)
     sample = generator(key)
     batchsize = tree_utils.tree_shape(sample)
@@ -255,7 +259,7 @@ def train(
         loggers=[NeptuneLogger(f"iss/{project_name}", run_name)]
         if log_to_neptune
         else [],
-        callbacks=[EvalFnCallback(eval_fn), DustinExperiment(network, 5)],
+        callbacks=[EvalFnCallback(eval_fn), DustinExperiment(network_dustin, 5)],
     )
 
     loop.run(n_episodes)
