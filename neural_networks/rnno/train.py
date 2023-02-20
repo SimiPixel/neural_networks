@@ -195,11 +195,6 @@ class DustinExperiment(TrainingLoopCallback):
         metrices.update(self.last_metrices)
 
 
-def _build_optimizer(n_episodes, tbp, N):
-    steps = int(N / tbp)
-    return adam(steps=n_episodes * steps)
-
-
 def _repeat_state(state, repeats: int):
     pmap_size, vmap_size = distribute_batchsize(repeats)
     return jax.vmap(jax.vmap(lambda _: state))(jnp.zeros((pmap_size, vmap_size)))
@@ -209,6 +204,8 @@ def train(
     generator: Callable,
     n_episodes: int,
     network: hk.TransformedWithState,
+    optimizer=adam(),
+    tbp=1000,
     network_dustin=None,
     project_name: str = "rnno",
     run_name: str = None,
@@ -220,11 +217,8 @@ def train(
     key = jax.random.PRNGKey(0)
     sample = generator(key)
     batchsize = tree_utils.tree_shape(sample)
-    N = tree_utils.tree_shape(sample, 1)
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
-    tbp = 1000
-    optimizer = _build_optimizer(n_episodes, tbp, N)
     key, consume = jax.random.split(key)
     key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
