@@ -1,9 +1,11 @@
 import jax
 import jax.numpy as jnp
-from x_xy import base, rcmg, rcmg_callbacks, rcmg_old
+from x_xy import base
+from x_xy.rcmg import rcmg, rcmg_callbacks, rcmg_old_3Seg
 from x_xy.utils import add_floating_base
 
 from neural_networks.rnno import rnno_network, rnno_network_local, train
+from neural_networks.rnno.optimizer import ranger
 
 
 def three_segment_system() -> base.System:
@@ -53,10 +55,10 @@ def test_train(batchsize=1):
 
     for generator in [
         rcmg_new(T, Ts, batchsize),
-        rcmg_old.rcmg(batchsize, T=T, Ts=Ts),
+        rcmg_old_3Seg.rcmg_3Seg(batchsize, T=T, Ts=Ts),
     ]:
         for network in [
             rnno_network(),
             rnno_network_local(n_hidden_units=50, message_dim=30),
         ]:
-            train(generator, network, 2, log_to_neptune=False)
+            train(generator, 2, network, optimizer=ranger(), log_to_neptune=False)
