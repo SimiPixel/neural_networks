@@ -3,6 +3,7 @@ from typing import Optional
 
 import jax
 import neptune.new as neptune
+import optax
 from tree_utils import PyTree
 
 # An arbitrarily nested dictionary with jax.Array leaves; Or strings

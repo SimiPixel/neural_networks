@@ -1,7 +1,7 @@
 import optax
 
 
-def adam(lr=3e-4, steps=9000, alpha=1e-7, eps=1e-3):
+def adam(lr=3e-3, steps=9000, alpha=1e-7, eps=1e-8):
     schedule = optax.cosine_decay_schedule(lr, steps, alpha)
     optimizer = optax.chain(
         optax.clip(0.1),
