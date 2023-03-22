@@ -1,9 +1,9 @@
+import os
 from abc import ABC, abstractmethod
 from typing import Optional
 
 import jax
 import neptune.new as neptune
-import optax
 from tree_utils import PyTree
 
 # An arbitrarily nested dictionary with jax.Array leaves; Or strings
@@ -17,11 +17,6 @@ class Logger(ABC):
 
     def close(self):
         pass
-
-
-api_token = "eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfd\
-    XJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI5MGJlN2E2Mi0yYzh\
-        kLTRmYmEtOWJiNC01ZTViYTFkZmQ0YzAifQ=="
 
 
 def n_params(params):
@@ -48,7 +43,23 @@ def to_float_if_not_string(value):
 
 
 class NeptuneLogger(Logger):
-    def __init__(self, project: str, name: Optional[str] = None):
+    def __init__(self, project: Optional[str] = None, name: Optional[str] = None):
+        """Logger that logs the training progress to Neptune.
+
+        Args:
+            project (Optional[str], optional): Name of the project where the run should
+                go, in the form "workspace-name/project_name"
+            name (Optional[str], optional): Identifier inside the project.
+
+        Raises:
+            Exception: If environment variable `NEPTUNE_TOKEN` is unset.
+        """
+        api_token = os.environ.get("NEPTUNE_TOKEN", None)
+        if api_token is None:
+            raise Exception(
+                "Could not find the token for neptune logging. Make sure that the \
+                            environment variable `NEPTUNE_TOKEN` is set."
+            )
         self.run = neptune.init_run(
             name=name,
             project=project,

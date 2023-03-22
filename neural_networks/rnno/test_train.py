@@ -61,4 +61,4 @@ def test_train(batchsize=1):
             rnno_network(),
             rnno_network_local(n_hidden_units=50, message_dim=30),
         ]:
-            train(generator, 2, network, optimizer=ranger(), log_to_neptune=False)
+            train(generator, 2, network, optimizer=ranger())

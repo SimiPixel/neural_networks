@@ -9,7 +9,7 @@ import tree_utils
 from x_xy import maths
 from x_xy.rcmg import distribute_batchsize, expand_batchsize
 
-from neural_networks.logging import NeptuneLogger, flatten_dict
+from neural_networks.logging import Logger, flatten_dict
 from neural_networks.rnno.dustin_exp.dustin_exp import generator_dustin_exp
 from neural_networks.rnno.training_loop import TrainingLoop, TrainingLoopCallback
 
@@ -205,12 +205,29 @@ def train(
     n_episodes: int,
     network: hk.TransformedWithState,
     optimizer=adam(),
-    tbp=1000,
+    tbp: int = 1000,
     network_dustin=None,
-    project_name: str = "rnno",
-    run_name: str = None,
-    log_to_neptune: bool = True,
+    loggers: list[Logger] = [],
 ):
+    """Trains RNNO
+
+    Args:
+        generator (Callable): output of the rcmg-module
+        n_episodes (int): number of episodes to train for
+        network (hk.TransformedWithState): RNNO network
+        optimizer (_type_, optional): optimizer, see optimizer.py module
+        tbp (int, optional): Truncated backpropagation through time step size
+        network_dustin (_type_, optional): RNNO network used for evaluation on dustin's
+            exp. Only RNNOv2 has the ability to be trained on a four segment chain,
+            yet be evaluated on a three segment setup.
+            This means that for training of RNNOv1 the generator must be from 3Seg.
+            For RNNOv2 and generator is 4Seg, then this parameter must provide RNNOv2
+            for 3Seg.
+            For RNNOv2 and generator is 3Seg, then this can be `None`
+        loggers: list of Loggers used to log the training progress.
+    """
+    # network_dustin is used to evaluate on the dustin experiment
+
     if network_dustin is None:
         network_dustin = network
 
@@ -219,7 +236,6 @@ def train(
     batchsize = tree_utils.tree_shape(sample)
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
-    key, consume = jax.random.split(key)
     key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
         consume,
@@ -250,9 +266,7 @@ def train(
         initial_params,
         opt_state,
         step_fn,
-        loggers=[NeptuneLogger(f"iss/{project_name}", run_name)]
-        if log_to_neptune
-        else [],
+        loggers=loggers,
         callbacks=[EvalFnCallback(eval_fn), DustinExperiment(network_dustin, 5)],
     )
 
