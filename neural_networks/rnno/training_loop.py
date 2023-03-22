@@ -1,4 +1,5 @@
 import jax
+import tqdm
 import tree_utils
 
 from neural_networks.logging import Logger, n_params
@@ -42,7 +43,7 @@ class TrainingLoop:
         return consume
 
     def run(self, n_episodes: int = 1):
-        for _ in range(n_episodes):
+        for _ in tqdm.tqdm(range(n_episodes)):
             self.step()
 
     def step(self):
