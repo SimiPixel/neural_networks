@@ -42,9 +42,12 @@ class TrainingLoop:
         self._key, consume = jax.random.split(self._key)
         return consume
 
-    def run(self, n_episodes: int = 1):
+    def run(self, n_episodes: int = 1, close_afterwards: bool = True):
         for _ in tqdm.tqdm(range(n_episodes)):
             self.step()
+
+        if close_afterwards:
+            self.close()
 
     def step(self):
         self.i_episode += 1
