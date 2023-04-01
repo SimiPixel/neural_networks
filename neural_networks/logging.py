@@ -45,6 +45,7 @@ def to_float_if_not_string(value):
 class NeptuneLogger(Logger):
     def __init__(self, project: Optional[str] = None, name: Optional[str] = None):
         """Logger that logs the training progress to Neptune.
+        Does not log if `NEPTUNE_DISABLE` is set to `1`.
 
         Args:
             project (Optional[str], optional): Name of the project where the run should
@@ -60,13 +61,21 @@ class NeptuneLogger(Logger):
                 "Could not find the token for neptune logging. Make sure that the \
                             environment variable `NEPTUNE_TOKEN` is set."
             )
+
+        self._stop_logging = bool(os.environ.get("NEPTUNE_DISABLE", 0))
+        if self._stop_logging:
+            return
+
         self.run = neptune.init_run(
             name=name,
             project=project,
             api_token=api_token,
         )
 
-    def log(self, metrices):
+    def log(self, metrices) -> None:
+        if self._stop_logging:
+            return
+
         metrices = flatten_dict(metrices)
         metrices = jax.tree_map(to_float_if_not_string, metrices)
 
