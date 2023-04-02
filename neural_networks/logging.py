@@ -99,6 +99,11 @@ class NeptuneLogger(Logger):
             # Then remove
             os.system(f"rm {manager}_list.txt")
 
+        # Log nvidia-smi
+        os.system("nvidia-smi >> nvidia_smi.txt")
+        self.run["nvidia_smi"].upload("nvidia_smi.txt", wait=True)
+        os.system("rm nvidia_smi.txt")
+
     def log(self, metrices) -> None:
         if self._stop_logging:
             return
