@@ -6,7 +6,14 @@ from neural_networks.logging import Logger, n_params
 
 
 class TrainingLoopCallback:
-    def after_training_step(self, i_episode: int, metrices: dict, params, sample_eval):
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: dict,
+        sample_eval: dict,
+        loggers: list[Logger],
+    ) -> None:
         pass
 
 
@@ -64,7 +71,7 @@ class TrainingLoop:
 
         for callback in self._callbacks:
             callback.after_training_step(
-                self.i_episode, metrices, self._params, self._sample_eval
+                self.i_episode, metrices, self._params, self._sample_eval, self._loggers
             )
 
         for logger in self._loggers:
