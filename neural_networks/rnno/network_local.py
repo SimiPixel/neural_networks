@@ -11,6 +11,7 @@ def rnno_network_local(
     n_hidden_units: int = 400,
     message_dim: int = 200,
     length_of_chain: int = 3,
+    keep_graph_filter_bug: bool = False,
 ):
     """Graph Filter."""
 
@@ -90,7 +91,12 @@ def rnno_network_local(
         # intuitive version:
         # node_nrs = list(range(N - 1, 0, -1))
         # graph_filter.py version:
-        node_nrs = list(range(1, N))
+        # node_nrs = list(range(1, N))
+
+        if keep_graph_filter_bug:
+            node_nrs = list(range(1, N))
+        else:
+            node_nrs = list(range(N - 1, 0, -1))
 
         return dict(zip(node_nrs, qs))
 
