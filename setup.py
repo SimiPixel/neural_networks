@@ -30,14 +30,14 @@ def find_data_files(package_dir, patterns, excludes=()):
 setuptools.setup(
     name="neural_networks",
     packages=setuptools.find_packages(),
-    version="0.2.0",
+    version="0.3.0",
     package_data={
         "neural_networks": find_data_files("neural_networks", patterns=["*.joblib"])
     },
     include_package_data=True,
     install_requires=[
         "joblib",
-        "neptune-client",
+        "neptune",
         "x_xy @ git+https://github.com/SimiPixel/x_xy.git",
         "dm-haiku",
         "tqdm",
