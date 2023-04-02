@@ -11,6 +11,7 @@ from x_xy.rcmg import distribute_batchsize, expand_batchsize
 
 from neural_networks.logging import Logger, flatten_dict
 from neural_networks.rnno.dustin_exp.dustin_exp import generator_dustin_exp
+from neural_networks.rnno.save_load import load_params
 from neural_networks.rnno.training_loop import TrainingLoop, TrainingLoopCallback
 
 from .optimizer import adam
@@ -156,7 +157,14 @@ class EvalFnCallback(TrainingLoopCallback):
     def __init__(self, eval_fn):
         self.eval_fn = eval_fn
 
-    def after_training_step(self, i_episode: int, metrices: dict, params, sample_eval):
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: dict,
+        sample_eval: dict,
+        loggers: list[Logger],
+    ):
         metrices.update(self.eval_fn(params, sample_eval["X"], sample_eval["y"]))
 
 
@@ -183,7 +191,14 @@ class DustinExperiment(TrainingLoopCallback):
         )
         self.eval_dustin_exp_every = eval_dustin_exp_every
 
-    def after_training_step(self, i_episode: int, metrices: dict, params, sample_eval):
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: dict,
+        sample_eval: dict,
+        loggers: list[Logger],
+    ):
         if self.eval_dustin_exp_every == -1:
             return
 
@@ -208,6 +223,7 @@ def train(
     tbp: int = 1000,
     network_dustin=None,
     loggers: list[Logger] = [],
+    path_to_initial_params=None,
 ):
     """Trains RNNO
 
@@ -225,6 +241,8 @@ def train(
             for 3Seg.
             For RNNOv2 and generator is 3Seg, then this can be `None`
         loggers: list of Loggers used to log the training progress.
+        path_to_initial_params: If given a str or pathlib.Path object, tries to load
+            and use as initial parameters.
     """
     # network_dustin is used to evaluate on the dustin experiment
 
@@ -243,7 +261,12 @@ def train(
     )
     initial_state = _repeat_state(initial_state, batchsize)
 
-    initial_params = optax.LookaheadParams(initial_params, initial_params)
+    if path_to_initial_params is not None:
+        initial_params = load_params(path_to_initial_params)
+
+    if not isinstance(initial_params, optax.LookaheadParams):
+        initial_params = optax.LookaheadParams(initial_params, initial_params)
+
     opt_state = optimizer.init(initial_params)
 
     step_fn = _build_step_fn(
