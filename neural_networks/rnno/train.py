@@ -255,6 +255,7 @@ def train(
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
     key, consume = jax.random.split(key)
+    key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
         consume,
         tree_utils.tree_slice(sample["X"], 0),
