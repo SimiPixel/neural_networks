@@ -1,9 +1,10 @@
 import os
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Optional
 
 import jax
-import neptune.new as neptune
+import neptune
 from tree_utils import PyTree
 
 # An arbitrarily nested dictionary with jax.Array leaves; Or strings
@@ -43,9 +44,15 @@ def to_float_if_not_string(value):
 
 
 class NeptuneLogger(Logger):
-    def __init__(self, project: Optional[str] = None, name: Optional[str] = None):
+    def __init__(
+        self,
+        project: Optional[str] = None,
+        name: Optional[str] = None,
+        force_logging: bool = False,
+    ):
         """Logger that logs the training progress to Neptune.
-        Does not log if `NEPTUNE_DISABLE` is set to `1`.
+        Does not log if `NEPTUNE_DISABLE` is set to `1`, unless `force_logging` is set,
+        then it allways logs.
 
         Args:
             project (Optional[str], optional): Name of the project where the run should
@@ -62,7 +69,12 @@ class NeptuneLogger(Logger):
                             environment variable `NEPTUNE_TOKEN` is set."
             )
 
-        self._stop_logging = bool(os.environ.get("NEPTUNE_DISABLE", 0))
+        self._stop_logging = bool(os.environ.get("NEPTUNE_DISABLE", None))
+
+        # overwrite if flag is set
+        if force_logging:
+            self._stop_logging = False
+
         if self._stop_logging:
             return
 
@@ -71,6 +83,21 @@ class NeptuneLogger(Logger):
             project=project,
             api_token=api_token,
         )
+
+        # Record exact start of training
+        self.run["train/start"] = datetime.now()
+
+        # Record all package versions in conda env
+        for manager in ["pip", "conda"]:
+            # First, dump into a txt-file
+            os.system(f'{manager} list >> "{manager}_list.txt"')
+            # Then upload
+            # flag `wait`=True is required, otherwise it won't work
+            self.run[f"package_versions/{manager}"].upload(
+                f"{manager}_list.txt", wait=True
+            )
+            # Then remove
+            os.system(f"rm {manager}_list.txt")
 
     def log(self, metrices) -> None:
         if self._stop_logging:
@@ -81,3 +108,11 @@ class NeptuneLogger(Logger):
 
         for key, value in metrices.items():
             self.run[key].log(value)
+
+    def close(self):
+
+        if not self._stop_logging:
+            # Record exact end of training
+            self.run["train/end"] = datetime.now()
+
+        return super().close()
