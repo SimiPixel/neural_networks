@@ -81,7 +81,7 @@ Since we train RNNO on *random* chain motion, there must be some generating func
 This is handled by the `x_xy.rcmg` module. Consider e.g. the snippet
 
 ```python
-from x_xy.rcmg import rcmg_3seg
+from x_xy.rcmg.rcmg_old_3Seg import rcmg_3seg
 from jax import random
 
 # this produces a generating function that generates random motion of a three-segment chain
@@ -125,7 +125,7 @@ from neural_networks.rnno import train, rnno_network, rnno_network_local
 # but let's go with RNNO_v2
 network = rnno_network_local(length_of_chain=3)
 
-from x_xy.rcmg import rcmg_3seg
+from x_xy.rcmg.rcmg_old_3Seg import rcmg_3seg
 generator = rcmg_3Seg(batchsize=32)
 
 # start training
