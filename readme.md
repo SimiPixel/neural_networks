@@ -2,6 +2,15 @@
 
 **Currently only supports kinematic chains. No branching!**
 
+## Installation
+
+Create a new conda-env with `Python=3.10`.
+Then,
+- `pip install jaxlib==0.4.3 jax==0.4.4` 
+- `pip install git+https://github.com/SimiPixel/neural_networks.git`
+
+---
+
 This repository hosts RNNO in two versions.
 
 RNNOv1 -> `network.py`
