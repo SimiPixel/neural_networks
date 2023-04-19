@@ -56,8 +56,10 @@ class NeptuneLogger(Logger):
 
         Args:
             project (Optional[str], optional): Name of the project where the run should
-                go, in the form "workspace-name/project_name"
-            name (Optional[str], optional): Identifier inside the project.
+                go, in the form "workspace-name/project_name". Can also be provided
+                using the environemnt variable `NEPTUNE_PROJECT`
+            name (Optional[str], optional): Identifier inside the project. Can also be
+            provided using the environment variable `NEPTUNE_NAME`
 
         Raises:
             Exception: If environment variable `NEPTUNE_TOKEN` is unset.
@@ -77,6 +79,9 @@ class NeptuneLogger(Logger):
 
         if self._stop_logging:
             return
+
+        if name is None:
+            name = os.environ.get("NEPTUNE_NAME", None)
 
         self.run = neptune.init_run(
             name=name,
@@ -115,7 +120,6 @@ class NeptuneLogger(Logger):
             self.run[key].log(value)
 
     def close(self):
-
         if not self._stop_logging:
             # Record exact end of training
             self.run["train/end"] = datetime.now()
