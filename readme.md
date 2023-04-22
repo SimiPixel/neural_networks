@@ -6,7 +6,8 @@
 
 Create a new conda-env with `Python=3.10`.
 Then,
-- `pip install jaxlib==0.4.3 jax==0.4.4` 
+
+- `pip install jaxlib==0.4.3 jax==0.4.4`
 - `pip install git+https://github.com/SimiPixel/neural_networks.git`
 
 ---
@@ -22,6 +23,7 @@ We will work with the v2 version mostly (because i believe it is better).
 It also hosts experimental data to validate RNNO against (also during training process of RNNO).
 
 ## What the RNNO_v1/2 networks expect as `X` and returns as `y`
+
 Both `rnno_network` and `rnno_network_local` expect the input `X` to be
 
 ```python
@@ -48,6 +50,7 @@ X = {
 ```
 
 and what it returns is
+
 ```python
 # y is a dict of the time-series of the relative quaternions from the
 # segment to its parent.
@@ -60,23 +63,26 @@ y = {
     1: jax.Array
     2: jax.Array
     ...
-    N-1: jax.Array 
+    N-1: jax.Array
 }
 ```
+
 ## Both RNNO_v1/2 networks are maps from
 
 ```python
 network = rnno_network()
-# initialize the network parameters and the initial state 
+# initialize the network parameters and the initial state
 # using a random seed `key`
 params, state = network.init(key, X)
-# then we can call the network with 
+# then we can call the network with
 y = network.apply(params, state, X)
 ```
+
 where `X` has no batchsize dimension. Batching is done via `jax.vmap`
 
 ## So where does `X,y` come from?
-Since we train RNNO on *random* chain motion, there must be some generating function that, given a seed, produces some random chain motion. Records the IMU measurements and the relative pose and returns the data.
+
+Since we train RNNO on _random_ chain motion, there must be some generating function that, given a seed, produces some random chain motion. Records the IMU measurements and the relative pose and returns the data.
 
 This is handled by the `x_xy.rcmg` module. Consider e.g. the snippet
 
@@ -125,7 +131,7 @@ from neural_networks.rnno import train, rnno_network, rnno_network_local
 # but let's go with RNNO_v2
 network = rnno_network_local(length_of_chain=3)
 
-from x_xy.rcmg.rcmg_old_3Seg import rcmg_3seg
+from x_xy.rcmg.rcmg_old_3Seg import rcmg_3Seg
 generator = rcmg_3Seg(batchsize=32)
 
 # start training
@@ -134,8 +140,10 @@ train(generator, n_episodes, network, loggers=[])
 ```
 
 ## Logging the training progress
+
 I use neptune to log runs. For this purpose make sure that the environment variable `NEPTUNE_TOKEN` is set with the token of your neptune account.
 Then provide the logger like so
+
 ```python
 from neural_networks.logging import NeptuneLogger
 train(generator, n_epsiodes, network, loggers=[NeptuneLogger()])
