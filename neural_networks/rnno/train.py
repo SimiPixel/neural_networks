@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import optax
 import tree_utils
 from x_xy import maths
-from x_xy.rcmg import distribute_batchsize, expand_batchsize
+from x_xy.utils import distribute_batchsize, expand_batchsize
 
 from neural_networks.logging import Logger, flatten_dict
 from neural_networks.rnno.dustin_exp.dustin_exp import generator_dustin_exp
@@ -18,20 +18,20 @@ from .optimizer import adam
 
 default_metrices = {
     "mae_deg": (
-        lambda q, qhat: maths.quat_angle_error(q, qhat),
+        lambda q, qhat: maths.angle_error(q, qhat),
         lambda arr: jnp.rad2deg(jnp.mean(arr, axis=(0, 1))),
     ),
     "rmse_deg": (
-        lambda q, qhat: maths.quat_angle_error(q, qhat) ** 2,
+        lambda q, qhat: maths.angle_error(q, qhat) ** 2,
         # we reduce time at axis=1, and batchsize at axis=0
         lambda arr: jnp.rad2deg(jnp.mean(jnp.sqrt(jnp.mean(arr, axis=1)), axis=0)),
     ),
     "q90_ae_deg": (
-        lambda q, qhat: maths.quat_angle_error(q, qhat),
+        lambda q, qhat: maths.angle_error(q, qhat),
         lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.90, axis=1), axis=0)),
     ),
     "q99_ae_deg": (
-        lambda q, qhat: maths.quat_angle_error(q, qhat),
+        lambda q, qhat: maths.angle_error(q, qhat),
         lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.99, axis=1), axis=0)),
     ),
 }
@@ -43,25 +43,25 @@ def _warm_up_doesnot_count(arr):
 
 default_metrices_dustin_exp = {
     "mae_deg": (
-        lambda q, qhat: maths.quat_angle_error(q, qhat),
+        lambda q, qhat: maths.angle_error(q, qhat),
         lambda arr: jnp.rad2deg(jnp.mean(_warm_up_doesnot_count(arr), axis=(0, 1))),
     ),
     "rmse_deg": (
-        lambda q, qhat: maths.quat_angle_error(q, qhat) ** 2,
+        lambda q, qhat: maths.angle_error(q, qhat) ** 2,
         # we reduce time at axis=1, and batchsize at axis=0
         lambda arr: jnp.rad2deg(
             jnp.mean(jnp.sqrt(jnp.mean(_warm_up_doesnot_count(arr), axis=1)), axis=0)
         ),
     ),
     "q90_ae_deg": (
-        lambda q, qhat: maths.quat_angle_error(q, qhat),
+        lambda q, qhat: maths.angle_error(q, qhat),
         lambda arr: jnp.rad2deg(
             jnp.mean(jnp.quantile(_warm_up_doesnot_count(arr), 0.90, axis=1), axis=0)
         ),
     ),
 }
 
-default_loss_fn = lambda q, qhat: maths.quat_angle_error(q, qhat) ** 2
+default_loss_fn = lambda q, qhat: maths.angle_error(q, qhat) ** 2
 
 
 def _build_eval_fn(
@@ -165,7 +165,7 @@ class EvalFnCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ):
-        metrices.update(self.eval_fn(params, sample_eval["X"], sample_eval["y"]))
+        metrices.update(self.eval_fn(params, sample_eval[0], sample_eval[1]))
 
 
 class DustinExperiment(TrainingLoopCallback):
@@ -179,7 +179,7 @@ class DustinExperiment(TrainingLoopCallback):
         # delete batchsize dimension for init of params
         consume = jax.random.PRNGKey(1)
         _, initial_state_dustin = network.init(
-            consume, tree_utils.tree_slice(self.sample["X"], 0)
+            consume, tree_utils.tree_slice(self.sample[0], 0)
         )
         batchsize = tree_utils.tree_shape(self.sample)
         initial_state_dustin = _repeat_state(initial_state_dustin, batchsize)
@@ -204,7 +204,7 @@ class DustinExperiment(TrainingLoopCallback):
 
         if (i_episode % self.eval_dustin_exp_every) == 0:
             self.last_metrices = flatten_dict(
-                {"dustin_exp": self.eval_fn(params, self.sample["X"], self.sample["y"])}
+                {"dustin_exp": self.eval_fn(params, self.sample[0], self.sample[1])}
             )
 
         metrices.update(self.last_metrices)
@@ -258,7 +258,7 @@ def train(
     key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
         consume,
-        tree_utils.tree_slice(sample["X"], 0),
+        tree_utils.tree_slice(sample[0], 0),
     )
     initial_state = _repeat_state(initial_state, batchsize)
 

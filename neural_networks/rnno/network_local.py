@@ -1,113 +1,100 @@
+from collections import defaultdict
 from types import SimpleNamespace
 
 import haiku as hk
 import jax
 import jax.numpy as jnp
-import tree_utils
+from x_xy import base, scan
 from x_xy.maths import safe_normalize
 
 
-def rnno_network_local(
-    n_hidden_units: int = 400,
+def rnno_network(
+    sys: base.System,
+    state_dim: int = 400,
     message_dim: int = 200,
-    length_of_chain: int = 3,
-    keep_graph_filter_bug: bool = False,
-):
-    """Graph Filter."""
-
-    N = length_of_chain
-
-    def get_local(state, node_nr: int):
-        return jax.lax.dynamic_index_in_dim(state, node_nr, keepdims=False)
-
-    def set_local(state, node_nr: int, local_new_state):
-        return jax.lax.dynamic_update_index_in_dim(
-            state, local_new_state, node_nr, axis=0
-        )
-
-    def local_measurement(X, node_nr):
-        def left(X):
-            return tree_utils.batch_concat(X[0], 0)
-
-        def right(X):
-            return tree_utils.batch_concat(X[N - 1], 0)
-
-        def no_imu(X):
-            return jnp.zeros((6,))
-
-        return jax.lax.cond(
-            jnp.isin(node_nr, 0),
-            left,
-            lambda X: jax.lax.cond(jnp.isin(node_nr, N - 1), right, no_imu, X),
-            X,
-        )
-
+) -> SimpleNamespace:
     @hk.without_apply_rng
     @hk.transform_with_state
-    def scan_time(X):
-        recv_msg_from_top = hk.GRU(n_hidden_units)
-        recv_external = hk.GRU(n_hidden_units)
-        recv_msg_from_bot = hk.GRU(n_hidden_units)
-        send_msg_to_bot = hk.nets.MLP([n_hidden_units, message_dim])
-        send_msg_to_top = hk.nets.MLP([n_hidden_units, message_dim])
-        send_external = hk.nets.MLP([n_hidden_units, 4])
+    def timestep(X):
+        recv_msg_from_top = hk.GRU(state_dim)
+        recv_external = hk.GRU(state_dim)
+        recv_msg_from_bot = hk.GRU(state_dim)
+        send_msg_to_bot = hk.nets.MLP([state_dim, message_dim])
+        send_msg_to_top = hk.nets.MLP([state_dim, message_dim])
+        send_external = hk.nets.MLP([state_dim, 4])
 
-        state = hk.get_state("state", [N, n_hidden_units], init=jnp.zeros)
+        state = hk.get_state("state", [sys.num_links(), state_dim], init=jnp.zeros)
 
-        def scan_top2bot(carry, _):
-            recv_msg, state, node_nr = carry
-            local_state = get_local(state, node_nr)
-            local_state, _ = recv_msg_from_top(recv_msg, local_state)
-            measurement = local_measurement(X, node_nr)
-            local_state, _ = recv_external(measurement, local_state)
-            state = set_local(state, node_nr, local_state)
-            send_msg = send_msg_to_bot(local_state)
-            assert send_msg.shape == (message_dim,)
-            return (send_msg, state, node_nr + 1), _
+        state = {i: state[i] for i in range(sys.num_links())}
+        msg = {-1: jnp.zeros((message_dim,))}
 
-        def scan_bot2top(carry, _):
-            recv_msg, state, node_nr = carry
-            local_state = get_local(state, node_nr)
-            local_state, _ = recv_msg_from_bot(recv_msg, local_state)
-            state = set_local(state, node_nr, local_state)
-            y = send_external(local_state)
-            send_msg = send_msg_to_top(local_state)
-            assert send_msg.shape == (message_dim,)
-            return (send_msg, state, node_nr - 1), y
+        def scan_top_to_bot_recv_imu_data(_, __, i: int, p: int, name: str):
+            # recv message from top & update local state
+            local_state, _ = recv_msg_from_top(msg[p], state[i])
 
-        empty_msg = jnp.zeros((message_dim,))
-        state = hk.scan(scan_top2bot, (empty_msg, state, 0), xs=None, length=N)[1]
-        carry, ys = hk.scan(scan_bot2top, (empty_msg, state, N - 1), xs=None, length=N)
-        state = carry[1]
+            # recv imu data & update local state
+            local_measurement = (
+                jnp.concatenate((X[name]["acc"], X[name]["gyr"]))
+                if name in X
+                else jnp.zeros((6,))
+            )
+            local_state, _ = recv_external(local_measurement, local_state)
+
+            # send message to bot
+            msg[i] = send_msg_to_bot(local_state)
+
+            # save local state
+            state[i] = local_state
+
+        scan.tree(
+            sys,
+            scan_top_to_bot_recv_imu_data,
+            "lll",
+            list(range(sys.num_links())),
+            sys.link_parents,
+            sys.link_names,
+        )
+
+        y = {}
+        mailbox = defaultdict(lambda: jnp.zeros((message_dim,)))
+
+        def scan_bot_to_top_send_ori(_, __, i: int, p: int, name: str):
+            # all childs have left their messages in the mailbox
+            local_state, _ = recv_msg_from_bot(mailbox[i], state[i])
+            state[i] = local_state
+
+            if p == -1:
+                return
+
+            # send orientation estimate to outside world
+            y[name] = safe_normalize(send_external(local_state))
+
+            # leave message in mailbox of parent
+            mailbox[p] = mailbox[p] + send_msg_to_top(local_state)
+
+        scan.tree(
+            sys,
+            scan_bot_to_top_send_ori,
+            "lll",
+            list(range(sys.num_links())),
+            sys.link_parents,
+            sys.link_names,
+            reverse=True,
+        )
+
+        state = jnp.concatenate([state[i][None] for i in range(sys.num_links())])
         hk.set_state("state", state)
 
-        # convert first axis to list; for tree_map
-        qs = jax.tree_map(safe_normalize, [q for q in ys[1:]])
-
-        # TODO
-        # order is reversed due to top-bottom scan
-        # BUT
-        # in graph_filter.py i did not realize this
-        # intuitive version:
-        # node_nrs = list(range(N - 1, 0, -1))
-        # graph_filter.py version:
-        # node_nrs = list(range(1, N))
-
-        if keep_graph_filter_bug:
-            node_nrs = list(range(1, N))
-        else:
-            node_nrs = list(range(N - 1, 0, -1))
-
-        return dict(zip(node_nrs, qs))
+        return y
 
     def init(key, X):
         X_at_t0 = jax.tree_map(lambda arr: arr[0], X)
-        params, state = scan_time.init(key, X_at_t0)
+        params, state = timestep.init(key, X_at_t0)
         return params, state
 
     def apply(params, state, X):
         def swap_args(carry, X):
-            y, carry = scan_time.apply(params, carry, X)
+            y, carry = timestep.apply(params, carry, X)
             return carry, y
 
         def unrolled(state, X):

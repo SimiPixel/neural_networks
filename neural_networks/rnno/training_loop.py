@@ -1,6 +1,7 @@
 import jax
 import tqdm
 import tree_utils
+from x_xy.algorithms import Generator
 
 from neural_networks.logging import Logger, n_params
 
@@ -21,7 +22,7 @@ class TrainingLoop:
     def __init__(
         self,
         key,
-        generator,
+        generator: Generator,
         params,
         opt_state,
         step_fn,
@@ -63,7 +64,7 @@ class TrainingLoop:
         self._sample_eval = self._generator(self.key)
 
         self._params, self._opt_state, loss = self._step_fn(
-            self._params, self._opt_state, sample_train["X"], sample_train["y"]
+            self._params, self._opt_state, sample_train[0], sample_train[1]
         )
 
         metrices = {}

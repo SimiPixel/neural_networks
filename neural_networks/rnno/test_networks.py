@@ -1,23 +1,28 @@
 import jax
 import jax.numpy as jnp
+import x_xy
 
-from neural_networks.rnno.network import rnno_network
-from neural_networks.rnno.network_local import rnno_network_local
+from neural_networks.rnno.network_local import rnno_network
 
 
-def test_networks():
-    # this should be the output of a `x_xy` simulation
-    Ts = 0.01
-    for T in [10, 20]:
-        N = int(T / Ts)
-        for network_fn in [rnno_network, rnno_network_local]:
-            for length_of_chain in [3, 4, 5]:
-                X = {
-                    0: {"acc": jnp.ones((N, 3)), "gyr": jnp.ones((N, 3))},
-                    length_of_chain - 1: jnp.ones((N, 6)),
-                }
-                network = network_fn(length_of_chain=length_of_chain)
-                params, state = network.init(jax.random.PRNGKey(1), X)
-                y, state = network.apply(params, state, X)
-                for i in range(1, length_of_chain):
-                    assert y[i].shape == (N, 4)
+def make_train_data(key, q, x, sys):
+    X = {
+        name: x_xy.algorithms.imu(x.take(sys.name_to_idx(name), 1), sys.gravity, sys.dt)
+        for name in sys.link_names
+    }
+    return X
+
+
+def test_rnno():
+    for i, example in enumerate(x_xy.io.list_examples()):
+        sys = x_xy.io.load_example(example)
+        seed = jax.random.PRNGKey(1)
+        X = x_xy.algorithms.build_generator(sys, finalize_fn=make_train_data)(seed)
+        rnno = rnno_network(sys, 40, 20)
+
+        if i == 0:
+            params, state = rnno.init(seed, X)
+        else:
+            _, state = rnno.init(seed, X)
+
+        y = rnno.apply(params, state, X)[0]
