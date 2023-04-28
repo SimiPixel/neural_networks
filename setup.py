@@ -40,7 +40,7 @@ setuptools.setup(
         "jaxlib",
         "joblib",
         "neptune",
-        "x_xy @ git+https://github.com/SimiPixel/x_xy.git",
+        "x_xy @ git+https://github.com/SimiPixel/x_xy_v2.git",
         "dm-haiku",
         "tqdm",
     ],
