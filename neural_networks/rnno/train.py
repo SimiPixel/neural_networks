@@ -6,11 +6,12 @@ import jax
 import jax.numpy as jnp
 import optax
 import tree_utils
+import x_xy
 from x_xy import maths
 from x_xy.utils import distribute_batchsize, expand_batchsize
 
 from neural_networks.logging import Logger, flatten_dict
-from neural_networks.rnno.dustin_exp.dustin_exp import generator_dustin_exp
+from neural_networks.rnno import dustin_exp_Xy
 from neural_networks.rnno.save_load import load_params
 from neural_networks.rnno.training_loop import TrainingLoop, TrainingLoopCallback
 
@@ -172,7 +173,7 @@ class DustinExperiment(TrainingLoopCallback):
     def __init__(
         self, network: hk.TransformedWithState, eval_dustin_exp_every: int = -1
     ):
-        self.sample = generator_dustin_exp()
+        self.sample = dustin_exp_Xy()
 
         # build network for dustin experiment which always
         # has 3 segments; Needs its own state
@@ -250,15 +251,21 @@ def train(
         network_dustin = network
 
     key = jax.random.PRNGKey(0)
-    sample = generator(key)
-    batchsize = tree_utils.tree_shape(sample)
+    X, y = generator(key)
+
+    if tree_utils.tree_ndim(X) == 2:
+        generator = x_xy.algorithms.batch_generator(generator, 1)
+
+    X, y = generator(key)
+
+    batchsize = tree_utils.tree_shape(X)
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
     key, consume = jax.random.split(key)
     key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
         consume,
-        tree_utils.tree_slice(sample[0], 0),
+        tree_utils.tree_slice(X, 0),
     )
     initial_state = _repeat_state(initial_state, batchsize)
 

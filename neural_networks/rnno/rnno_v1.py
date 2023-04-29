@@ -16,7 +16,7 @@ complexities = dict(
 )
 
 
-def rnno_network(
+def rnno_v1(
     rnn_layers=(100,),
     rnn_cell=hk.GRU,
     linear_layers=(),

@@ -8,7 +8,7 @@ from x_xy import base, scan
 from x_xy.maths import safe_normalize
 
 
-def rnno_network(
+def rnno_v2(
     sys: base.System,
     state_dim: int = 400,
     message_dim: int = 200,
@@ -88,11 +88,14 @@ def rnno_network(
         return y
 
     def init(key, X):
+        "Returns: (params, state)"
         X_at_t0 = jax.tree_map(lambda arr: arr[0], X)
         params, state = timestep.init(key, X_at_t0)
         return params, state
 
     def apply(params, state, X):
+        "Returns: (y, state)"
+
         def swap_args(carry, X):
             y, carry = timestep.apply(params, carry, X)
             return carry, y

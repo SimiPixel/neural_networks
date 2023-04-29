@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Tuple
 
 import jax
 import jax.numpy as jnp
@@ -23,7 +24,7 @@ dustin_exp_xml = r"""
 """
 
 
-def generator_dustin_exp():
+def dustin_exp_Xy() -> Tuple[jax.Array, jax.Array]:
     start_indices = jnp.array([start for start in range(3000, 4200, 150)])
 
     dd = joblib.load(Path(__file__).parent.resolve().joinpath("dustin_exp.joblib"))
