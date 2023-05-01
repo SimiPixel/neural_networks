@@ -10,7 +10,7 @@ N = 10287
 T = 6000
 
 
-dustin_exp_xml = r"""
+dustin_exp_xml_seg1 = r"""
 <x_xy model="dustin_exp">
     <options gravity="0 0 9.81" dt="0.01"/>
     <worldbody>
@@ -23,19 +23,57 @@ dustin_exp_xml = r"""
 </x_xy>
 """
 
+dustin_exp_xml_seg2 = r"""
+<x_xy model="dustin_exp">
+    <options gravity="0 0 9.81" dt="0.01"/>
+    <worldbody>
+        <body name="seg2" joint="free">
+            <body name="seg1" joint="ry"></body>
+            <body name="seg3" joint="rz"></body>
+        </body>
+    </worldbody>
+</x_xy>
+"""
 
-def dustin_exp_Xy() -> Tuple[jax.Array, jax.Array]:
+dustin_exp_xml_seg3 = r"""
+<x_xy model="dustin_exp">
+    <options gravity="0 0 9.81" dt="0.01"/>
+    <worldbody>
+        <body name="seg3" joint="free">
+            <body name="seg2" joint="rz">
+                <body name="seg1" joint="ry"></body>
+            </body>
+        </body>
+    </worldbody>
+</x_xy>
+"""
+
+# match default value from before
+dustin_exp_xml = dustin_exp_xml_seg1
+
+
+def dustin_exp_Xy(
+    anchor: str = "seg1", q_inv: bool = True
+) -> Tuple[jax.Array, jax.Array]:
     start_indices = jnp.array([start for start in range(3000, 4200, 150)])
 
     dd = joblib.load(Path(__file__).parent.resolve().joinpath("dustin_exp.joblib"))
     dd = jax.tree_map(jnp.asarray, dd)
 
-    qrel = lambda q1, q2: maths.quat_mul(maths.quat_inv(q1), q2)
+    if q_inv:
+        qrel = lambda q1, q2: maths.quat_mul(maths.quat_inv(q1), q2)
+    else:
+        qrel = lambda q1, q2: maths.quat_mul(q1, maths.quat_inv(q2))
+
     X = {
         "seg1": {"acc": dd["acc1"], "gyr": dd["gyr1"]},
         "seg3": {"acc": dd["acc3"], "gyr": dd["gyr3"]},
     }
-    y = {"seg2": qrel(dd["q1"], dd["q2"]), "seg3": qrel(dd["q2"], dd["q3"])}
+    y = {
+        "seg1": {"seg2": qrel(dd["q1"], dd["q2"]), "seg3": qrel(dd["q2"], dd["q3"])},
+        "seg2": {"seg1": qrel(dd["q2"], dd["q1"]), "seg3": qrel(dd["q2"], dd["q3"])},
+        "seg3": {"seg2": qrel(dd["q3"], dd["q2"]), "seg1": qrel(dd["q2"], dd["q1"])},
+    }[anchor]
 
     data = X, y
 

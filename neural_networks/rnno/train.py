@@ -171,9 +171,14 @@ class EvalFnCallback(TrainingLoopCallback):
 
 class DustinExperiment(TrainingLoopCallback):
     def __init__(
-        self, network: hk.TransformedWithState, eval_dustin_exp_every: int = -1
+        self,
+        network: hk.TransformedWithState,
+        eval_dustin_exp_every: int = -1,
+        metric_identifier: str = "dustin_exp",
+        anchor: str = "seg1",
+        q_inv: bool = True,
     ):
-        self.sample = dustin_exp_Xy()
+        self.sample = dustin_exp_Xy(anchor, q_inv)
 
         # build network for dustin experiment which always
         # has 3 segments; Needs its own state
@@ -191,6 +196,7 @@ class DustinExperiment(TrainingLoopCallback):
             *distribute_batchsize(batchsize),
         )
         self.eval_dustin_exp_every = eval_dustin_exp_every
+        self.metric_identifier = metric_identifier
 
     def after_training_step(
         self,
@@ -205,7 +211,11 @@ class DustinExperiment(TrainingLoopCallback):
 
         if (i_episode % self.eval_dustin_exp_every) == 0:
             self.last_metrices = flatten_dict(
-                {"dustin_exp": self.eval_fn(params, self.sample[0], self.sample[1])}
+                {
+                    self.metric_identifier: self.eval_fn(
+                        params, self.sample[0], self.sample[1]
+                    )
+                }
             )
 
         metrices.update(self.last_metrices)
@@ -224,6 +234,7 @@ def train(
     tbp: int = 1000,
     network_dustin=None,
     loggers: list[Logger] = [],
+    callbacks: list[TrainingLoopCallback] = [],
     path_to_initial_params=None,
 ):
     """Trains RNNO
@@ -291,6 +302,9 @@ def train(
         default_metrices, network.apply, initial_state, pmap_size, vmap_size
     )
 
+    default_callbacks = [EvalFnCallback(eval_fn)]
+    callbacks += default_callbacks
+
     loop = TrainingLoop(
         key,
         generator,
@@ -298,7 +312,7 @@ def train(
         opt_state,
         step_fn,
         loggers=loggers,
-        callbacks=[EvalFnCallback(eval_fn), DustinExperiment(network_dustin, 5)],
+        callbacks=callbacks,
     )
 
     loop.run(n_episodes)
