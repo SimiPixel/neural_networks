@@ -274,7 +274,6 @@ def train(
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
     key, consume = jax.random.split(key)
-    key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
         consume,
         tree_utils.tree_slice(X, 0),
@@ -303,11 +302,15 @@ def train(
         default_metrices, network.apply, initial_state, pmap_size, vmap_size
     )
 
-    default_callbacks = [EvalFnCallback(eval_fn)]
     if add_dustin_exp_callback:
-        default_callbacks += [DustinExperiment(network_dustin, 5)]
+        default_callbacks = [
+            EvalFnCallback(eval_fn),
+            DustinExperiment(network_dustin, 5),
+        ]
+    else:
+        default_callbacks = [EvalFnCallback(eval_fn)]
 
-    callbacks += default_callbacks
+    callbacks_all = default_callbacks + callbacks
 
     loop = TrainingLoop(
         key,
@@ -316,7 +319,7 @@ def train(
         opt_state,
         step_fn,
         loggers=loggers,
-        callbacks=callbacks,
+        callbacks=callbacks_all,
     )
 
     loop.run(n_episodes)
