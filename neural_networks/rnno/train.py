@@ -236,6 +236,7 @@ def train(
     loggers: list[Logger] = [],
     callbacks: list[TrainingLoopCallback] = [],
     path_to_initial_params=None,
+    add_dustin_exp_callback: bool = True,
 ):
     """Trains RNNO
 
@@ -303,6 +304,9 @@ def train(
     )
 
     default_callbacks = [EvalFnCallback(eval_fn)]
+    if add_dustin_exp_callback:
+        default_callbacks += [DustinExperiment(network_dustin, 5)]
+
     callbacks += default_callbacks
 
     loop = TrainingLoop(
