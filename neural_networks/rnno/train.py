@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 
 import haiku as hk
 import jax
@@ -226,6 +226,9 @@ def _repeat_state(state, repeats: int):
     return jax.vmap(jax.vmap(lambda _: state))(jnp.zeros((pmap_size, vmap_size)))
 
 
+key_generator, key_network = jax.random.split(jax.random.PRNGKey(0))
+
+
 def train(
     generator: Callable,
     n_episodes: int,
@@ -235,8 +238,10 @@ def train(
     network_dustin=None,
     loggers: list[Logger] = [],
     callbacks: list[TrainingLoopCallback] = [],
-    path_to_initial_params=None,
+    path_to_initial_params: Optional[str] = None,
     add_dustin_exp_callback: bool = True,
+    key_network: jax.random.PRNGKey = key_network,
+    key_generator: jax.random.PRNGKey = key_generator,
 ):
     """Trains RNNO
 
@@ -249,33 +254,35 @@ def train(
         network_dustin (_type_, optional): RNNO network used for evaluation on dustin's
             exp. Only RNNOv2 has the ability to be trained on a four segment chain,
             yet be evaluated on a three segment setup.
-            This means that for training of RNNOv1 the generator must be from 3Seg.
-            For RNNOv2 and generator is 4Seg, then this parameter must provide RNNOv2
-            for 3Seg.
-            For RNNOv2 and generator is 3Seg, then this can be `None`
         loggers: list of Loggers used to log the training progress.
+        callbacks: callbacks of the TrainingLoop.
         path_to_initial_params: If given a str or pathlib.Path object, tries to load
             and use as initial parameters.
+        add_dustin_exp_callback: If `True` appends a callback that evalutaes the
+            Dustin experiment.
+        key_network: PRNG Key that inits the network state and parameters.
+        key_generator: PRNG Key that inits the data stream of the generator.
     """
-    # network_dustin is used to evaluate on the dustin experiment
 
     if network_dustin is None:
         network_dustin = network
 
+    # test if generator is batched..
     key = jax.random.PRNGKey(0)
     X, y = generator(key)
 
     if tree_utils.tree_ndim(X) == 2:
+        # .. if not then batch it
         generator = x_xy.algorithms.batch_generator(generator, 1)
 
+    # .. now it most certainly is; Queue it for data
     X, y = generator(key)
 
     batchsize = tree_utils.tree_shape(X)
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
-    key, consume = jax.random.split(key)
     initial_params, initial_state = network.init(
-        consume,
+        key_network,
         tree_utils.tree_slice(X, 0),
     )
     initial_state = _repeat_state(initial_state, batchsize)
@@ -313,7 +320,7 @@ def train(
     callbacks_all = default_callbacks + callbacks
 
     loop = TrainingLoop(
-        key,
+        key_generator,
         generator,
         initial_params,
         opt_state,
