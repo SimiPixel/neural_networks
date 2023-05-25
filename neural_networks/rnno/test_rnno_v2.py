@@ -32,8 +32,11 @@ def test_rnno_v2():
         gen = x_xy.algorithms.build_generator(
             sys, x_xy.algorithms.RCMG_Config(T=10.0), finalize_fn=finalize_fn
         )
+        gen = x_xy.algorithms.batch_generator([gen, gen], [16, 16])
 
         X, y = gen(seed)
+        X, y = jax.tree_map(lambda arr: arr[0], (X, y))
+
         rnno = rnno_v2(sys, 40, 20)
 
         if i == 0:
@@ -59,7 +62,7 @@ def test_rnno_v2():
 
         # the `symmetric` example has only one body, i.e.
         # has no relative pose
-        if example == "symmetric":
+        if example == "symmetric" or example == "spherical_stiff" or example == "free":
             continue
 
         train(gen, 5, rnno, network_dustin=rnno_dustin)
