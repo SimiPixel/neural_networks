@@ -84,3 +84,44 @@ def dustin_exp_Xy(
         )
 
     return extract_windows(start_indices)
+
+
+def dustin_exp_Xy_with_imus(
+    anchor: str = "seg1", q_inv: bool = True
+) -> Tuple[jax.Array, jax.Array]:
+    start_indices = jnp.array([start for start in range(3000, 4200, 150)])
+
+    dd = joblib.load(Path(__file__).parent.resolve().joinpath("dustin_exp.joblib"))
+    dd = jax.tree_map(jnp.asarray, dd)
+
+    if q_inv:
+        qrel = lambda q1, q2: maths.quat_mul(maths.quat_inv(q1), q2)
+    else:
+        qrel = lambda q1, q2: maths.quat_mul(q1, maths.quat_inv(q2))
+
+    X = {
+        "imu1": {"acc": dd["acc1"], "gyr": dd["gyr1"]},
+        "imu2": {"acc": dd["acc3"], "gyr": dd["gyr3"]},
+    }
+    y = {
+        "seg1": {"seg2": qrel(dd["q1"], dd["q2"]), "seg3": qrel(dd["q2"], dd["q3"])},
+        "seg2": {"seg1": qrel(dd["q2"], dd["q1"]), "seg3": qrel(dd["q2"], dd["q3"])},
+        "seg3": {"seg2": qrel(dd["q3"], dd["q2"]), "seg1": qrel(dd["q2"], dd["q1"])},
+    }[anchor]
+
+    y.update(
+        {
+            "imu1": maths.unit_quats_like(dd["q1"]),
+            "imu2": maths.unit_quats_like(dd["q1"]),
+        }
+    )
+
+    data = X, y
+
+    @jax.vmap
+    def extract_windows(start):
+        return jax.tree_util.tree_map(
+            lambda arr: jax.lax.dynamic_slice_in_dim(arr, start, T), data
+        )
+
+    return extract_windows(start_indices)

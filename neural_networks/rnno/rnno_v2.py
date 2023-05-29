@@ -13,6 +13,8 @@ def rnno_v2(
     state_dim: int = 400,
     message_dim: int = 200,
 ) -> SimpleNamespace:
+    "Expects unbatched inputs. Batching via `vmap`"
+
     @hk.without_apply_rng
     @hk.transform_with_state
     def timestep(X):
