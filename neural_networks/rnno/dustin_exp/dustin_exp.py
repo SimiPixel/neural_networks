@@ -52,12 +52,22 @@ dustin_exp_xml_seg3 = r"""
 dustin_exp_xml = dustin_exp_xml_seg1
 
 
+def _remove_nan_values(dd):
+    # so apparently all OMC quaternion measurements have a single
+    # nan value; at one single timestep; simply overwrite that one
+    dd["q1"][4] = dd["q1"][3]
+    dd["q2"][4] = dd["q2"][3]
+    dd["q3"][5] = dd["q3"][4]
+    return dd
+
+
 def dustin_exp_Xy(
     anchor: str = "seg1", q_inv: bool = True
 ) -> Tuple[jax.Array, jax.Array]:
     start_indices = jnp.array([start for start in range(3000, 4200, 150)])
 
     dd = joblib.load(Path(__file__).parent.resolve().joinpath("dustin_exp.joblib"))
+    dd = _remove_nan_values(dd)
     dd = jax.tree_map(jnp.asarray, dd)
 
     if q_inv:
@@ -92,6 +102,7 @@ def dustin_exp_Xy_with_imus(
     start_indices = jnp.array([start for start in range(3000, 4200, 150)])
 
     dd = joblib.load(Path(__file__).parent.resolve().joinpath("dustin_exp.joblib"))
+    dd = _remove_nan_values(dd)
     dd = jax.tree_map(jnp.asarray, dd)
 
     if q_inv:
