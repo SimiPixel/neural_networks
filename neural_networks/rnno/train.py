@@ -12,7 +12,6 @@ from x_xy.utils import distribute_batchsize, expand_batchsize
 
 from neural_networks.logging import Logger, flatten_dict
 from neural_networks.rnno import dustin_exp_Xy
-from neural_networks.rnno.save_load import load_params
 from neural_networks.rnno.training_loop import TrainingLoop, TrainingLoopCallback
 
 from .optimizer import adam
@@ -238,7 +237,7 @@ def train(
     network_dustin=None,
     loggers: list[Logger] = [],
     callbacks: list[TrainingLoopCallback] = [],
-    path_to_initial_params: Optional[str] = None,
+    initial_params: Optional[dict] = None,
     add_dustin_exp_callback: bool = True,
     key_network: jax.random.PRNGKey = key_network,
     key_generator: jax.random.PRNGKey = key_generator,
@@ -256,8 +255,7 @@ def train(
             yet be evaluated on a three segment setup.
         loggers: list of Loggers used to log the training progress.
         callbacks: callbacks of the TrainingLoop.
-        path_to_initial_params: If given a str or pathlib.Path object, tries to load
-            and use as initial parameters.
+        initial_params: If given uses as initial parameters.
         add_dustin_exp_callback: If `True` appends a callback that evalutaes the
             Dustin experiment.
         key_network: PRNG Key that inits the network state and parameters.
@@ -281,17 +279,17 @@ def train(
     batchsize = tree_utils.tree_shape(X)
     pmap_size, vmap_size = distribute_batchsize(batchsize)
 
-    initial_params, initial_state = network.init(
+    params, initial_state = network.init(
         key_network,
         tree_utils.tree_slice(X, 0),
     )
     initial_state = _repeat_state(initial_state, batchsize)
 
-    if path_to_initial_params is not None:
-        initial_params = load_params(path_to_initial_params)
+    if initial_params is not None:
+        params = initial_params
 
-    if not isinstance(initial_params, optax.LookaheadParams):
-        initial_params = optax.LookaheadParams(initial_params, initial_params)
+    if not isinstance(params, optax.LookaheadParams):
+        initial_params = optax.LookaheadParams(params, params)
 
     opt_state = optimizer.init(initial_params)
 
