@@ -6,8 +6,9 @@ import jax.numpy as jnp
 import optax
 import pytest
 
+from neural_networks.io_params import load, save
 from neural_networks.logging import NeptuneLogger
-from neural_networks.rnno.io_params import SaveParamsTrainingLoopCallback, load, save
+from neural_networks.rnno.train import SaveParamsTrainingLoopCallback
 from neural_networks.rnno.training_loop import TrainingLoop
 
 

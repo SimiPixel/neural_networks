@@ -1,4 +1,5 @@
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 import haiku as hk
@@ -10,7 +11,8 @@ import x_xy
 from x_xy import maths
 from x_xy.utils import distribute_batchsize, expand_batchsize
 
-from neural_networks.logging import Logger, flatten_dict
+from neural_networks.io_params import save
+from neural_networks.logging import Logger, NeptuneLogger, flatten_dict
 from neural_networks.rnno import dustin_exp_Xy
 from neural_networks.rnno.training_loop import TrainingLoop, TrainingLoopCallback
 
@@ -218,6 +220,39 @@ class DustinExperiment(TrainingLoopCallback):
             )
 
         metrices.update(self.last_metrices)
+
+
+class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
+    def __init__(
+        self, n_episodes: int, path_to_file: str, upload_to_neptune: bool = True
+    ):
+        self.n_episodes = n_episodes
+        self.path_to_file = str(
+            Path(path_to_file).expanduser().with_suffix("").with_suffix(".pickle")
+        )
+        self._upload_to_neptune = upload_to_neptune
+
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: dict,
+        sample_eval: dict,
+        loggers: list[Logger],
+    ) -> None:
+        if i_episode != self.n_episodes - 1:
+            return
+
+        # params is Lookahead object
+        save(params.slow, self.path_to_file, overwrite=True)
+
+        if self._upload_to_neptune:
+            for logger in loggers:
+                if isinstance(logger, NeptuneLogger):
+                    logger.log_params(self.path_to_file)
+                    break
+            else:
+                raise Exception(f"No `NeptuneLogger` was found in {loggers}")
 
 
 def _repeat_state(state, repeats: int):

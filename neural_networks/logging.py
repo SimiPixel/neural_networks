@@ -119,6 +119,14 @@ class NeptuneLogger(Logger):
         for key, value in metrices.items():
             self.run[key].log(value)
 
+    def log_params(self, path_to_file: str) -> None:
+        if self._stop_logging:
+            return
+
+        print(f"Uploading file {path_to_file}")
+        self.run["final_params/path_to_file"].log(path_to_file)
+        self.run["final_params/params.pickle"].upload(path_to_file)
+
     def close(self):
         if not self._stop_logging:
             # Record exact end of training
