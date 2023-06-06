@@ -5,6 +5,7 @@ from typing import Optional
 
 import jax
 import neptune
+import numpy as np
 from tree_utils import PyTree
 
 # An arbitrarily nested dictionary with jax.Array leaves; Or strings
@@ -117,6 +118,10 @@ class NeptuneLogger(Logger):
         metrices = jax.tree_map(to_float_if_not_string, metrices)
 
         for key, value in metrices.items():
+            if np.isnan(value):
+                print(f"Warning: Value of metric {key} is {value}. We skip it.")
+                continue
+
             self.run[key].log(value)
 
     def log_params(self, path_to_file: str) -> None:
