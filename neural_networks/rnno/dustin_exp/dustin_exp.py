@@ -97,7 +97,7 @@ def dustin_exp_Xy(
 
 
 def dustin_exp_Xy_with_imus(
-    anchor: str = "seg1", q_inv: bool = True
+    anchor: str = "imu1", q_inv: bool = True
 ) -> Tuple[jax.Array, jax.Array]:
     start_indices = jnp.array([start for start in range(3000, 4200, 150)])
 
@@ -114,18 +114,27 @@ def dustin_exp_Xy_with_imus(
         "imu1": {"acc": dd["acc1"], "gyr": dd["gyr1"]},
         "imu2": {"acc": dd["acc3"], "gyr": dd["gyr3"]},
     }
+    id_q = maths.unit_quats_like(dd["q1"])
     y = {
-        "seg1": {"seg2": qrel(dd["q1"], dd["q2"]), "seg3": qrel(dd["q2"], dd["q3"])},
-        "seg2": {"seg1": qrel(dd["q2"], dd["q1"]), "seg3": qrel(dd["q2"], dd["q3"])},
-        "seg3": {"seg2": qrel(dd["q3"], dd["q2"]), "seg1": qrel(dd["q2"], dd["q1"])},
+        "imu1": {
+            "seg1": id_q,
+            "seg2": qrel(dd["q1"], dd["q2"]),
+            "seg3": qrel(dd["q2"], dd["q3"]),
+            "imu2": id_q,
+        },
+        "seg2": {
+            "imu1": id_q,
+            "seg1": qrel(dd["q2"], dd["q1"]),
+            "seg3": qrel(dd["q2"], dd["q3"]),
+            "imu2": id_q,
+        },
+        "imu2": {
+            "imu1": id_q,
+            "seg1": qrel(dd["q2"], dd["q1"]),
+            "seg2": qrel(dd["q3"], dd["q2"]),
+            "seg3": id_q,
+        },
     }[anchor]
-
-    y.update(
-        {
-            "imu1": maths.unit_quats_like(dd["q1"]),
-            "imu2": maths.unit_quats_like(dd["q1"]),
-        }
-    )
 
     data = X, y
 
