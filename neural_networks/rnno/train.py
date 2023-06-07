@@ -144,13 +144,15 @@ def _build_step_fn(
         X, y = expand_batchsize((X, y), pmap_size, vmap_size)
         nonlocal initial_state
 
+        debug_grads = []
         state = initial_state
         for X_tbp, y_tbp in tree_utils.tree_split((X, y), int(N / tbp), axis=-2):
             (loss, state), grads = pmapped_loss_fn(params, state, X_tbp, y_tbp)
+            debug_grads.append(grads)
             state = jax.lax.stop_gradient(state)
             params, opt_state = apply_grads(grads, params, opt_state)
 
-        return params, opt_state, {"loss": loss}
+        return params, opt_state, {"loss": loss}, debug_grads
 
     return step_fn
 
@@ -164,6 +166,7 @@ class EvalFnCallback(TrainingLoopCallback):
         i_episode: int,
         metrices: dict,
         params: dict,
+        grads: list[dict],
         sample_eval: dict,
         loggers: list[Logger],
     ):
@@ -204,6 +207,7 @@ class DustinExperiment(TrainingLoopCallback):
         i_episode: int,
         metrices: dict,
         params: dict,
+        grads: list[dict],
         sample_eval: dict,
         loggers: list[Logger],
     ):
@@ -237,6 +241,7 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
         i_episode: int,
         metrices: dict,
         params: dict,
+        grads: list[dict],
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
@@ -253,6 +258,27 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
                     break
             else:
                 raise Exception(f"No `NeptuneLogger` was found in {loggers}")
+
+
+class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: dict,
+        grads: list[dict],
+        sample_eval: dict,
+        loggers: list[Logger],
+    ) -> None:
+        gradient_log = {}
+        for i, grads_tbp in enumerate(grads):
+            grads_flat = tree_utils.batch_concat(grads_tbp, num_batch_dims=0)
+            grads_max = jnp.max(jnp.abs(grads_flat))
+            grads_norm = jnp.linalg.norm(grads_flat)
+            gradient_log[f"grads_tbp_{i}_max"] = grads_max
+            gradient_log[f"grads_tbp_{i}_l2norm"] = grads_norm
+
+        metrices.update(gradient_log)
 
 
 def _repeat_state(state, repeats: int):

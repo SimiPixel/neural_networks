@@ -2,6 +2,7 @@ import jax
 import x_xy
 
 from neural_networks.rnno import dustin_exp_xml, rnno_v2, train
+from neural_networks.rnno.train import LogGradsTrainingLoopCallBack
 
 
 def finalize_fn_full_imu_setup(key, q, x, sys):
@@ -65,7 +66,13 @@ def test_rnno_v2():
         if example == "symmetric" or example == "spherical_stiff" or example == "free":
             continue
 
-        train(gen, 5, rnno, network_dustin=rnno_dustin)
+        train(
+            gen,
+            5,
+            rnno,
+            network_dustin=rnno_dustin,
+            callbacks=[LogGradsTrainingLoopCallBack()],
+        )
 
 
 def test_layernorm():

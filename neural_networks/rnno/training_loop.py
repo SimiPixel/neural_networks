@@ -12,6 +12,7 @@ class TrainingLoopCallback:
         i_episode: int,
         metrices: dict,
         params: dict,
+        grads: list[dict],
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
@@ -63,7 +64,7 @@ class TrainingLoop:
         sample_train = self._sample_eval
         self._sample_eval = self._generator(self.key)
 
-        self._params, self._opt_state, loss = self._step_fn(
+        self._params, self._opt_state, loss, debug_grads = self._step_fn(
             self._params, self._opt_state, sample_train[0], sample_train[1]
         )
 
@@ -72,7 +73,12 @@ class TrainingLoop:
 
         for callback in self._callbacks:
             callback.after_training_step(
-                self.i_episode, metrices, self._params, self._sample_eval, self._loggers
+                self.i_episode,
+                metrices,
+                self._params,
+                debug_grads,
+                self._sample_eval,
+                self._loggers,
             )
 
         for logger in self._loggers:

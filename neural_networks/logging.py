@@ -118,7 +118,7 @@ class NeptuneLogger(Logger):
         metrices = jax.tree_map(to_float_if_not_string, metrices)
 
         for key, value in metrices.items():
-            if np.isnan(value):
+            if not isinstance(value, str) and np.isnan(value):
                 print(f"Warning: Value of metric {key} is {value}. We skip it.")
                 continue
 

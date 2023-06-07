@@ -41,7 +41,8 @@ def step_fn(params, opt_state, X, y):
     import time
 
     time.sleep(0.02)
-    return params, opt_state, {"loss": jnp.array(0.0)}
+    debug_grads = [params, params]
+    return params, opt_state, {"loss": jnp.array(0.0)}, debug_grads
 
 
 def test_save_params_loop_callback():
