@@ -19,17 +19,16 @@ def rnno_v2(
     @hk.without_apply_rng
     @hk.transform_with_state
     def timestep(X):
-        recv_msg_from_top = hk.GRU(state_dim)
-        recv_external = hk.GRU(state_dim)
-        recv_msg_from_bot = hk.GRU(state_dim)
-        create_ln = lambda: [hk.LayerNorm(-1, False, False)] if layernorm else []
-        send_msg_to_bot = hk.Sequential(
-            [hk.nets.MLP([state_dim, message_dim])] + create_ln()
+        prefix_layernorm = lambda cell: hk.Sequential(
+            [hk.LayerNorm(-1, False, False)] if layernorm else [] + cell
         )
-        send_msg_to_top = hk.Sequential(
-            [hk.nets.MLP([state_dim, message_dim])] + create_ln()
-        )
-        send_external = hk.Sequential(create_ln() + [hk.nets.MLP([state_dim, 4])])
+
+        recv_msg_from_top = prefix_layernorm(hk.GRU(state_dim))
+        recv_external = prefix_layernorm(hk.GRU(state_dim))
+        recv_msg_from_bot = prefix_layernorm(hk.GRU(state_dim))
+        send_msg_to_bot = hk.nets.MLP([state_dim, message_dim])
+        send_msg_to_top = hk.nets.MLP([state_dim, message_dim])
+        send_external = hk.nets.MLP([state_dim, 4])
 
         state = hk.get_state("state", [sys.num_links(), state_dim], init=jnp.zeros)
 
