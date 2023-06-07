@@ -20,7 +20,7 @@ def rnno_v2(
     @hk.transform_with_state
     def timestep(X):
         prefix_layernorm = lambda cell: hk.Sequential(
-            [hk.LayerNorm(-1, False, False)] if layernorm else [] + cell
+            [hk.LayerNorm(-1, False, False)] if layernorm else [] + [cell]
         )
 
         recv_msg_from_top = prefix_layernorm(hk.GRU(state_dim))
