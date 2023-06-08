@@ -8,24 +8,26 @@ from x_xy import base, scan
 from x_xy.maths import safe_normalize
 
 
+def _standardize(arr):
+    assert arr.ndim == 1
+    return (arr - jnp.mean(arr)) / (jnp.std(arr) + 1e-6)
+
+
 def rnno_v2(
     sys: base.System,
     state_dim: int = 400,
     message_dim: int = 200,
-    layernorm: bool = False,
+    standardize_message: bool = False,
+    standardize_state: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
     @hk.without_apply_rng
     @hk.transform_with_state
     def timestep(X):
-        prefix_layernorm = lambda cell: hk.Sequential(
-            [hk.LayerNorm(-1, False, False)] if layernorm else [] + [cell]
-        )
-
-        recv_msg_from_top = prefix_layernorm(hk.GRU(state_dim))
-        recv_external = prefix_layernorm(hk.GRU(state_dim))
-        recv_msg_from_bot = prefix_layernorm(hk.GRU(state_dim))
+        recv_msg_from_top = hk.GRU(state_dim)
+        recv_external = hk.GRU(state_dim)
+        recv_msg_from_bot = hk.GRU(state_dim)
         send_msg_to_bot = hk.nets.MLP([state_dim, message_dim])
         send_msg_to_top = hk.nets.MLP([state_dim, message_dim])
         send_external = hk.nets.MLP([state_dim, 4])
@@ -48,9 +50,14 @@ def rnno_v2(
             local_state, _ = recv_external(local_measurement, local_state)
 
             # send message to bot
-            msg[i] = send_msg_to_bot(local_state)
+            local_message = send_msg_to_bot(local_state)
+            if standardize_message:
+                local_message = _standardize(local_message)
+            msg[i] = local_message
 
             # save local state
+            if standardize_state:
+                local_state = _standardize(local_state)
             state[i] = local_state
 
         scan.tree(
@@ -68,6 +75,8 @@ def rnno_v2(
         def scan_bot_to_top_send_ori(_, __, i: int, p: int, name: str):
             # all childs have left their messages in the mailbox
             local_state, _ = recv_msg_from_bot(mailbox[i], state[i])
+            if standardize_state:
+                local_state = _standardize(local_state)
             state[i] = local_state
 
             if p == -1:
@@ -77,7 +86,10 @@ def rnno_v2(
             y[name] = safe_normalize(send_external(local_state))
 
             # leave message in mailbox of parent
-            mailbox[p] = mailbox[p] + send_msg_to_top(local_state)
+            local_message = send_msg_to_top(local_state)
+            if standardize_message:
+                local_message = _standardize(local_message)
+            mailbox[p] = mailbox[p] + local_message
 
         scan.tree(
             sys,
