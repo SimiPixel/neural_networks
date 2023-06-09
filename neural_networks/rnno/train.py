@@ -261,6 +261,9 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
 
 
 class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
+    def __init__(self, print=False) -> None:
+        self.print = print
+
     def after_training_step(
         self,
         i_episode: int,
@@ -277,6 +280,9 @@ class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
             grads_norm = jnp.linalg.norm(grads_flat)
             gradient_log[f"grads_tbp_{i}_max"] = grads_max
             gradient_log[f"grads_tbp_{i}_l2norm"] = grads_norm
+
+        if print:
+            print(gradient_log)
 
         metrices.update(gradient_log)
 

@@ -6,7 +6,7 @@ from typing import Optional
 import jax
 import neptune
 import numpy as np
-from tree_utils import PyTree
+from tree_utils import PyTree, tree_batch
 
 # An arbitrarily nested dictionary with jax.Array leaves; Or strings
 NestedDict = PyTree
@@ -42,6 +42,40 @@ def to_float_if_not_string(value):
         return value
     else:
         return float(value)
+
+
+class DictLogger(Logger):
+    def __init__(self, print_on_close: bool = False):
+        self._logs = {}
+        self._print_on_close = print_on_close
+
+    def log(self, metrics: NestedDict):
+        metrics = flatten_dict(metrics)
+        metrics = jax.tree_map(to_float_if_not_string, metrics)
+
+        metrics = tree_batch([metrics])
+
+        for key in metrics:
+            existing_keys = []
+            if key in self._logs:
+                existing_keys.append(key)
+            else:
+                self._logs[key] = metrics[key]
+
+        if len(existing_keys) > 0:
+            self._logs.update(
+                tree_batch(
+                    [
+                        {key: self._logs[key] for key in existing_keys},
+                        {key: metrics[key] for key in existing_keys},
+                    ],
+                    True,
+                )
+            )
+
+    def close(self):
+        if self._print_on_close:
+            print(self._logs)
 
 
 class NeptuneLogger(Logger):

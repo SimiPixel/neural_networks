@@ -5,12 +5,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 from x_xy import base, scan
-from x_xy.maths import safe_normalize
-
-
-def _standardize(arr):
-    assert arr.ndim == 1
-    return (arr - jnp.mean(arr)) / (jnp.std(arr) + 1e-6)
+from x_xy.maths import safe_normalize_custom_jvp
 
 
 def rnno_v2(
@@ -19,6 +14,8 @@ def rnno_v2(
     message_dim: int = 200,
     standardize_message: bool = False,
     standardize_state: bool = False,
+    state_init=jnp.zeros,
+    message_init=jnp.zeros,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
@@ -32,10 +29,11 @@ def rnno_v2(
         send_msg_to_top = hk.nets.MLP([state_dim, message_dim])
         send_external = hk.nets.MLP([state_dim, 4])
 
-        state = hk.get_state("state", [sys.num_links(), state_dim], init=jnp.zeros)
+        state = hk.get_state("state", [sys.num_links(), state_dim], init=state_init)
+        empty_message = hk.get_state("empty_message", [message_dim], init=message_init)
 
         state = {i: state[i] for i in range(sys.num_links())}
-        msg = {-1: jnp.zeros((message_dim,))}
+        msg = {-1: empty_message}
 
         def scan_top_to_bot_recv_imu_data(_, __, i: int, p: int, name: str):
             # recv message from top & update local state
@@ -52,12 +50,12 @@ def rnno_v2(
             # send message to bot
             local_message = send_msg_to_bot(local_state)
             if standardize_message:
-                local_message = _standardize(local_message)
+                local_message = hk.LayerNorm(-1, False, False)(local_message)
             msg[i] = local_message
 
             # save local state
             if standardize_state:
-                local_state = _standardize(local_state)
+                local_state = hk.LayerNorm(-1, False, False)(local_state)
             state[i] = local_state
 
         scan.tree(
@@ -70,25 +68,25 @@ def rnno_v2(
         )
 
         y = {}
-        mailbox = defaultdict(lambda: jnp.zeros((message_dim,)))
+        mailbox = defaultdict(lambda: empty_message)
 
         def scan_bot_to_top_send_ori(_, __, i: int, p: int, name: str):
             # all childs have left their messages in the mailbox
             local_state, _ = recv_msg_from_bot(mailbox[i], state[i])
             if standardize_state:
-                local_state = _standardize(local_state)
+                local_state = hk.LayerNorm(-1, False, False)(local_state)
             state[i] = local_state
 
             if p == -1:
                 return
 
             # send orientation estimate to outside world
-            y[name] = safe_normalize(send_external(local_state))
+            y[name] = safe_normalize_custom_jvp(send_external(local_state))
 
             # leave message in mailbox of parent
             local_message = send_msg_to_top(local_state)
             if standardize_message:
-                local_message = _standardize(local_message)
+                local_message = hk.LayerNorm(-1, False, False)(local_message)
             mailbox[p] = mailbox[p] + local_message
 
         scan.tree(
