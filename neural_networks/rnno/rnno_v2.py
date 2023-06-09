@@ -5,7 +5,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 from x_xy import base, scan
-from x_xy.maths import safe_normalize_custom_jvp
+from x_xy.maths import safe_normalize, safe_normalize_custom_jvp
 
 
 def rnno_v2(
@@ -16,8 +16,14 @@ def rnno_v2(
     standardize_state: bool = False,
     state_init=jnp.zeros,
     message_init=jnp.zeros,
+    custom_jvp: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
+
+    if custom_jvp:
+        normalize = safe_normalize_custom_jvp
+    else:
+        normalize = safe_normalize
 
     @hk.without_apply_rng
     @hk.transform_with_state
@@ -81,7 +87,7 @@ def rnno_v2(
                 return
 
             # send orientation estimate to outside world
-            y[name] = safe_normalize_custom_jvp(send_external(local_state))
+            y[name] = normalize(send_external(local_state))
 
             # leave message in mailbox of parent
             local_message = send_msg_to_top(local_state)
