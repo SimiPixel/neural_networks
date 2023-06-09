@@ -281,7 +281,7 @@ class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
             gradient_log[f"grads_tbp_{i}_max"] = grads_max
             gradient_log[f"grads_tbp_{i}_l2norm"] = grads_norm
 
-        if print:
+        if self.print:
             print(gradient_log)
 
         metrices.update(gradient_log)
