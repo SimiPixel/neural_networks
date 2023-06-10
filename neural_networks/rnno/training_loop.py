@@ -1,9 +1,17 @@
 import jax
 import tqdm
 import tree_utils
+from optax import LookaheadParams
 from x_xy.algorithms import Generator
 
 from neural_networks.logging import Logger, n_params
+
+_KILL_RUN = False
+
+
+def send_kill_run_signal():
+    global _KILL_RUN
+    _KILL_RUN = True
 
 
 class TrainingLoopCallback:
@@ -11,11 +19,14 @@ class TrainingLoopCallback:
         self,
         i_episode: int,
         metrices: dict,
-        params: dict,
+        params: LookaheadParams,
         grads: list[dict],
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
+        pass
+
+    def close(self):
         pass
 
 
@@ -55,6 +66,9 @@ class TrainingLoop:
         for _ in tqdm.tqdm(range(n_episodes)):
             self.step()
 
+            if _KILL_RUN:
+                break
+
         if close_afterwards:
             self.close()
 
@@ -87,5 +101,8 @@ class TrainingLoop:
         return metrices
 
     def close(self):
+        for callback in self._callbacks:
+            callback.close()
+
         for logger in self._loggers:
             logger.close()
