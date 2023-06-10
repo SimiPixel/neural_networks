@@ -1,8 +1,12 @@
 import jax
 import x_xy
 
-from neural_networks.rnno import dustin_exp_xml, rnno_v2, train
-from neural_networks.rnno.train import LogGradsTrainingLoopCallBack
+from neural_networks.rnno import (
+    LogGradsTrainingLoopCallBack,
+    dustin_exp_xml,
+    rnno_v2,
+    train,
+)
 
 
 def finalize_fn_full_imu_setup(key, q, x, sys):
