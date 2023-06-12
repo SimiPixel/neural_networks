@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Optional
 
 import optax
@@ -10,7 +11,7 @@ def adam(
     eps=1e-4,
     clip=0.1,
     adap_clip=0.05,
-    skip_nan: Optional[int] = None,
+    skip_large_updates_l2_norm: Optional[float] = None,
 ):
     # works well for rnno v2
     # clip: 0.1
@@ -23,8 +24,16 @@ def adam(
         optax.adaptive_grad_clip(adap_clip),
         optax.adam(schedule, b2=0.99, eps=eps),
     )
-    if skip_nan is not None:
-        optimizer = optax.apply_if_finite(optimizer, skip_nan)
+
+    if skip_large_updates_l2_norm is not None:
+        optimizer = optax.MultiSteps(
+            optimizer,
+            every_k_schedule=1,
+            should_skip_update_fn=partial(
+                optax.skip_large_updates, max_squared_norm=skip_large_updates_l2_norm
+            ),
+        )
+
     optimizer = optax.lookahead(optimizer, sync_period=6, slow_step_size=0.7)
     return optimizer
 
