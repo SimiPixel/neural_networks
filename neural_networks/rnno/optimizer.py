@@ -1,7 +1,68 @@
-from functools import partial
-from typing import Optional
+from typing import Any, NamedTuple, Optional
 
+import jax
+import jax.numpy as jnp
 import optax
+from jax import lax
+from jax.tree_util import tree_map
+from optax._src import base, numerics
+
+
+class SkipIfLargeUpdatesState(NamedTuple):
+    toolarge_count: jnp.array
+    inner_state: Any
+
+
+def _condition_skip_large_updates(updates: base.Updates, max_norm_sq: float):
+    norm_sq = jnp.sum(
+        jnp.array([jnp.sum(p**2) for p in jax.tree_util.tree_leaves(updates)])
+    )
+    # This will also return True if `norm_sq` is NaN.
+    return norm_sq < max_norm_sq
+
+
+def skip_large_update(
+    inner: base.GradientTransformation,
+    max_norm_sq: float,
+    max_consecutive_toolarge: int,
+) -> base.GradientTransformation:
+    "Also skips NaNs."
+    inner = base.with_extra_args_support(inner)
+
+    def init(params):
+        return SkipIfLargeUpdatesState(
+            toolarge_count=jnp.zeros([], jnp.int32),
+            inner_state=inner.init(params),
+        )
+
+    def update(updates, state: SkipIfLargeUpdatesState, params=None, **extra_args):
+        inner_state = state.inner_state
+        not_toolarge = _condition_skip_large_updates(updates, max_norm_sq)
+        toolarge_count = jnp.where(
+            not_toolarge,
+            jnp.zeros([], jnp.int32),
+            numerics.safe_int32_increment(state.toolarge_count),
+        )
+
+        def do_update(_):
+            return inner.update(updates, inner_state, params, **extra_args)
+
+        def reject_update(_):
+            return (tree_map(jnp.zeros_like, updates), inner_state)
+
+        updates, new_inner_state = lax.cond(
+            jnp.logical_or(not_toolarge, toolarge_count > max_consecutive_toolarge),
+            do_update,
+            reject_update,
+            operand=None,
+        )
+
+        return updates, SkipIfLargeUpdatesState(
+            toolarge_count=toolarge_count,
+            inner_state=new_inner_state,
+        )
+
+    return base.GradientTransformationExtraArgs(init=init, update=update)
 
 
 def adam(
@@ -12,6 +73,7 @@ def adam(
     clip=0.1,
     adap_clip=0.05,
     skip_large_updates_l2_norm: Optional[float] = None,
+    max_consecutive_toolarge: int = 1,
 ):
     # works well for rnno v2
     # clip: 0.1
@@ -26,12 +88,8 @@ def adam(
     )
 
     if skip_large_updates_l2_norm is not None:
-        optimizer = optax.MultiSteps(
-            optimizer,
-            every_k_schedule=1,
-            should_skip_update_fn=partial(
-                optax.skip_large_updates, max_squared_norm=skip_large_updates_l2_norm
-            ),
+        optimizer = skip_large_update(
+            optimizer, skip_large_updates_l2_norm, max_consecutive_toolarge
         )
 
     optimizer = optax.lookahead(optimizer, sync_period=6, slow_step_size=0.7)
