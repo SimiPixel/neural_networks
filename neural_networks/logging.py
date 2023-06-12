@@ -156,6 +156,10 @@ class NeptuneLogger(Logger):
                 print(f"Warning: Value of metric {key} is {value}. We skip it.")
                 continue
 
+            if not isinstance(value, str) and np.isinf(value):
+                print(f"Warning: Value of metric {key} is {value}. We skip it.")
+                continue
+
             self.run[key].log(value)
 
     def log_params(self, path_to_file: str) -> None:
