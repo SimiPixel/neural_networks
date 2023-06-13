@@ -65,6 +65,17 @@ def skip_large_update(
     return base.GradientTransformationExtraArgs(init=init, update=update)
 
 
+def replace_non_finite_updates(inner: base.GradientTransformation):
+    "Replace all NaN and Inf values elementwise with zeros."
+
+    def update(updates, inner_state, params=None, **extra_args):
+        # replace NaNs and Infs
+        updates = tree_map(lambda arr: jnp.where(jnp.isfinite(arr), arr, 0.0), updates)
+        return inner.update(updates, inner_state, params, **extra_args)
+
+    return base.GradientTransformationExtraArgs(init=inner.init, update=update)
+
+
 def adam(
     lr=3e-3,
     steps=9000,
@@ -86,6 +97,8 @@ def adam(
         optax.adaptive_grad_clip(adap_clip),
         optax.adam(schedule, b2=0.99, eps=eps),
     )
+
+    optimizer = replace_non_finite_updates(optimizer)
 
     if skip_large_updates_l2_norm is not None:
         optimizer = skip_large_update(
