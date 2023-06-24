@@ -1,46 +1,31 @@
+from typing import Sequence
+
 import haiku as hk
 import jax
 import jax.numpy as jnp
 import tree_utils
+import x_xy
 from x_xy.maths import safe_normalize
-
-more_more_complex = dict(
-    rnn_layers=(500, 400), linear_layers=(250, 150, 75, 75, 50, 50)
-)
-more_complex = dict(rnn_layers=(400, 300), linear_layers=(200, 100, 50, 50, 25, 25))
-complex = dict(rnn_layers=(300, 200), linear_layers=(100, 50, 50, 25, 25))
-medium = dict(rnn_layers=(100, 100), linear_layers=(50, 25))
-shallow = dict(rnn_layers=(100,), linear_layers=(25,))
-complexities = dict(
-    more_complex=more_more_complex, complex=more_complex, medium=complex, shallow=medium
-)
 
 
 def rnno_v1(
-    rnn_layers=(100,),
-    rnn_cell=hk.GRU,
-    linear_layers=(),
-    layernorm=True,
+    sys: x_xy.base.System,
+    rnn_layers: Sequence[int] = (400, 300),
+    linear_layers: Sequence[int] = (200, 100, 50, 50, 25, 25),
+    layernorm: bool = True,
     act_fn_linear=jax.nn.relu,
     act_fn_rnn=jax.nn.elu,
-    length_of_chain=3,
 ):
-    """RNN-neural net.
-    (time, features) -> (time, 4*n_output_quats), norm_mse
-    """
-    N = length_of_chain
-
     @hk.without_apply_rng
     @hk.transform_with_state
     def forward_fn(X):
-        # extract measurements
-        X = tree_utils.batch_concat((X[0], X[N - 1]))
+        X = tree_utils.batch_concat(X)
 
         for i, n_units in enumerate(rnn_layers):
             state = hk.get_state(f"rnn_{i}", shape=[n_units], init=jnp.zeros)
-            X, state = hk.dynamic_unroll(rnn_cell(n_units), X, state)
+            X, state = hk.dynamic_unroll(hk.GRU(n_units), X, state)
             hk.set_state(f"rnn_{i}", state)
-            # layer-norm
+
             if layernorm:
                 X = hk.LayerNorm(axis=-1, create_scale=False, create_offset=False)(X)
             X = act_fn_rnn(X)
@@ -49,13 +34,31 @@ def rnno_v1(
             X = hk.Linear(n_units)(X)
             X = act_fn_linear(X)
 
-        out_dim = (N - 1) * 4
+        out_dim = _num_links_parent_not_root(sys.link_parents) * 4
         X = hk.Linear(out_dim)(X)
 
-        qs = jax.tree_map(
-            safe_normalize, [X[:, i * 4 : (i + 1) * 4] for i in range(N - 1)]
+        quats = {}
+        idx = 0
+
+        def build_quaternion_output(_, __, name: str, p: int):
+            nonlocal idx
+            if p == -1:
+                return
+            quats[name] = safe_normalize(X[:, idx * 4 : (idx + 1) * 4])
+            idx += 1
+
+        x_xy.scan.tree(
+            sys,
+            build_quaternion_output,
+            "ll",
+            sys.link_names,
+            sys.link_parents,
         )
-        node_nrs = list(range(1, N))
-        return dict(zip(node_nrs, qs))
+        assert idx * 4 == X.shape[1]
+        return quats
 
     return forward_fn
+
+
+def _num_links_parent_not_root(parent_array: list[int]):
+    return len([p for p in parent_array if p != -1])

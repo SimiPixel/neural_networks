@@ -6,6 +6,7 @@ from .dustin_exp.dustin_exp import (
     dustin_exp_Xy,
     dustin_exp_Xy_with_imus,
 )
+from .rnno_v1 import rnno_v1
 from .rnno_v2 import rnno_v2
 from .train import train
 from .training_loop import TrainingLoopCallback, send_kill_run_signal

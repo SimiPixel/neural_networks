@@ -10,6 +10,7 @@ Then,
 
 ## Defining a RNNO
 RNNO_v2 is locally passing messages between nodes of a kinematic tree in order to estimate the pose of the kinematic tree. The order in which messages are passed is defined by a `x_xy.base.System`.
+
 Suppose we are given a system defined by the following xml-string:
 
 ```xml
@@ -33,6 +34,8 @@ from neural_networks.rnno import rnno_v2
 
 dustin_exp_xml_str = ...
 sys = x_xy.io.load_sys_from_str(dustin_exp_xml_str)
+
+# or replace `rnno_v2` with `rnno_v1`
 rnno = rnno_v2(sys)
 ```
 
@@ -66,11 +69,11 @@ y = {
 ## Both RNNO network is a map from
 
 ```python
-network = rnno()
+network = rnno(sys)
 # initialize the network parameters and the initial state 
 # using a random seed `key`
 params, state = network.init(key, X)
 # then we can call the network with 
-y = network.apply(params, state, X)
+yhat, _ = network.apply(params, state, X)
 ```
-where `X` has no batchsize dimension. Batching is done via `jax.vmap`
+where `X` has no batchsize dimension. Batching is done via `jax.vmap`.
