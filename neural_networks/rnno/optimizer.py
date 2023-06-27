@@ -120,6 +120,41 @@ def adam(
     return optimizer
 
 
+def adam_norm_clip(
+    lr=3e-3,
+    steps=9000,
+    alpha=1e-7,
+    eps=1e-4,
+    norm_clip=0.5,
+    skip_large_updates_l2_norm: Optional[float] = None,
+    max_consecutive_toolarge: int = 1,
+    large_updates_warmup: int = 0,
+):
+    # works well for rnno v2
+    # clip: 0.1
+    # adap clip: 0.05
+    # eps: 1e-4
+
+    schedule = optax.cosine_decay_schedule(lr, steps, alpha)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(norm_clip),
+        optax.adam(schedule, b2=0.99, eps=eps),
+    )
+
+    optimizer = replace_non_finite_updates(optimizer)
+
+    if skip_large_updates_l2_norm is not None:
+        optimizer = skip_large_update(
+            optimizer,
+            skip_large_updates_l2_norm,
+            max_consecutive_toolarge,
+            large_updates_warmup,
+        )
+
+    optimizer = optax.lookahead(optimizer, sync_period=6, slow_step_size=0.7)
+    return optimizer
+
+
 def ranger(
     lr=3e-3,
     steps=1e4,
