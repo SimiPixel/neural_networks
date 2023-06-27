@@ -10,6 +10,7 @@ from optax._src import base, numerics
 
 class SkipIfLargeUpdatesState(NamedTuple):
     toolarge_count: jnp.array
+    count: jnp.array
     inner_state: Any
 
 
@@ -25,6 +26,7 @@ def skip_large_update(
     inner: base.GradientTransformation,
     max_norm_sq: float,
     max_consecutive_toolarge: int,
+    warmup: int = 0,
 ) -> base.GradientTransformation:
     "Also skips NaNs."
     inner = base.with_extra_args_support(inner)
@@ -32,6 +34,7 @@ def skip_large_update(
     def init(params):
         return SkipIfLargeUpdatesState(
             toolarge_count=jnp.zeros([], jnp.int32),
+            count=jnp.zeros([], jnp.int32),
             inner_state=inner.init(params),
         )
 
@@ -51,7 +54,10 @@ def skip_large_update(
             return (tree_map(jnp.zeros_like, updates), inner_state)
 
         updates, new_inner_state = lax.cond(
-            jnp.logical_or(not_toolarge, toolarge_count > max_consecutive_toolarge),
+            jnp.logical_or(
+                jnp.logical_or(not_toolarge, toolarge_count > max_consecutive_toolarge),
+                state.count < warmup,
+            ),
             do_update,
             reject_update,
             operand=None,
@@ -59,6 +65,7 @@ def skip_large_update(
 
         return updates, SkipIfLargeUpdatesState(
             toolarge_count=toolarge_count,
+            count=numerics.safe_int32_increment(state.count),
             inner_state=new_inner_state,
         )
 
@@ -85,6 +92,7 @@ def adam(
     adap_clip=0.05,
     skip_large_updates_l2_norm: Optional[float] = None,
     max_consecutive_toolarge: int = 1,
+    large_updates_warmup: int = 0,
 ):
     # works well for rnno v2
     # clip: 0.1
@@ -102,7 +110,10 @@ def adam(
 
     if skip_large_updates_l2_norm is not None:
         optimizer = skip_large_update(
-            optimizer, skip_large_updates_l2_norm, max_consecutive_toolarge
+            optimizer,
+            skip_large_updates_l2_norm,
+            max_consecutive_toolarge,
+            large_updates_warmup,
         )
 
     optimizer = optax.lookahead(optimizer, sync_period=6, slow_step_size=0.7)

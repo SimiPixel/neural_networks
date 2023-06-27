@@ -30,7 +30,7 @@ def find_data_files(package_dir, patterns, excludes=()):
 setuptools.setup(
     name="neural_networks",
     packages=setuptools.find_packages(),
-    version="0.4.16",
+    version="0.4.17",
     package_data={
         "neural_networks": find_data_files("neural_networks", patterns=["*.joblib"])
     },
