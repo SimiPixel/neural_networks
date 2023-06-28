@@ -6,7 +6,6 @@ from typing import Callable, Optional, Tuple
 import haiku as hk
 import jax
 import jax.numpy as jnp
-import joblib
 import tree_utils
 from optax import LookaheadParams
 from x_xy import maths
@@ -152,13 +151,19 @@ class DustinExperiment(TrainingLoopCallback):
 
 class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
     def __init__(
-        self, n_episodes: int, path_to_file: str, upload_to_neptune: bool = True
+        self,
+        path_to_file: str,
+        upload_to_neptune: bool = True,
+        last_n_params: int = 1,
+        slow_and_fast: bool = False,
     ):
-        self.n_episodes = n_episodes
         self.path_to_file = str(
             Path(path_to_file).expanduser().with_suffix("").with_suffix(".pickle")
         )
         self._upload_to_neptune = upload_to_neptune
+        self._params = deque(maxlen=last_n_params)
+        self.slow_and_fast = slow_and_fast
+        self._loggers = []
 
     def after_training_step(
         self,
@@ -169,24 +174,33 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
-        if i_episode != self.n_episodes - 1:
-            return
+        if not self.slow_and_fast:
+            params = params.slow
 
+        self._params.append(params)
+        self._loggers = loggers
+
+    def close(self):
         # params is Lookahead object
-        save(params.slow, self.path_to_file, overwrite=True)
+        params = list(self._params)
+        if len(params) == 1:
+            params = params[0]
+
+        save(params, self.path_to_file, overwrite=True)
 
         if self._upload_to_neptune:
-            for logger in loggers:
+            for logger in self._loggers:
                 if isinstance(logger, NeptuneLogger):
                     logger.log_params(self.path_to_file)
                     break
             else:
-                raise Exception(f"No `NeptuneLogger` was found in {loggers}")
+                raise Exception(f"No `NeptuneLogger` was found in {self._loggers}")
 
 
 class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
-    def __init__(self, print=False) -> None:
+    def __init__(self, print=False, kill_if_larger: Optional[float] = None) -> None:
         self.print = print
+        self.kill_if_larger = kill_if_larger
 
     def after_training_step(
         self,
@@ -202,6 +216,8 @@ class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
             grads_flat = tree_utils.batch_concat(grads_tbp, num_batch_dims=0)
             grads_max = jnp.max(jnp.abs(grads_flat))
             grads_norm = jnp.linalg.norm(grads_flat)
+            if self.kill_if_larger is not None and grads_norm > self.kill_if_larger:
+                send_kill_run_signal()
             gradient_log[f"grads_tbp_{i}_max"] = grads_max
             gradient_log[f"grads_tbp_{i}_l2norm"] = grads_norm
 
@@ -214,18 +230,8 @@ class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
 class NanKillRunCallback(TrainingLoopCallback):
     def __init__(
         self,
-        filename: Optional[str] = None,
-        save_trace: bool = False,
-        trace_length: int = 3,
         print: bool = True,
     ) -> None:
-        if filename is None:
-            assert save_trace is False, "Requires filename if `save_trace` is `True`"
-        self.save_trace = save_trace
-        self.params_is_nan = False
-        self._trace_length = trace_length
-        self.filename = Path(filename).with_suffix(".joblib") if filename else None
-        self._trace = deque(maxlen=trace_length)
         self.print = print
 
     def after_training_step(
@@ -237,28 +243,16 @@ class NanKillRunCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
-        trace_element = params.fast
-        self._trace.append(trace_element)
-
         params_fast_flat = tree_utils.batch_concat(params.fast, num_batch_dims=0)
-        self.params_is_nan = jnp.any(jnp.isnan(params_fast_flat))
+        params_is_nan = jnp.any(jnp.isnan(params_fast_flat))
 
-        if self.params_is_nan:
+        if params_is_nan:
             send_kill_run_signal()
 
-        if self.params_is_nan and self.print:
+        if params_is_nan and self.print:
             print(
                 f"Parameters have converged to NaN at step {i_episode}. Exiting run.."
             )
-            if self.save_trace:
-                print(
-                    f"Saving trace of length {self._trace_length} in file"
-                    " {self.filename}"
-                )
-
-    def close(self):
-        if self.params_is_nan and self.save_trace:
-            joblib.dump(self._trace, self.filename)
 
 
 def _repeat_state(state, repeats: int):

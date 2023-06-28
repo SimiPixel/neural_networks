@@ -51,7 +51,7 @@ def test_save_params_loop_callback():
     test_file = "~/params2/params.pickle"
     logger = NeptuneLogger("iss/test", name=str(datetime.now()), force_logging=True)
     n_episodes = 100
-    callback = SaveParamsTrainingLoopCallback(n_episodes, test_file)
+    callback = SaveParamsTrainingLoopCallback(test_file)
 
     opt_state = None
     loop = TrainingLoop(
