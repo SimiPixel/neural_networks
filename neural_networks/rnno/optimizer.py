@@ -8,6 +8,49 @@ from jax.tree_util import tree_map
 from optax._src import base, numerics
 
 
+class BelowOrZero(NamedTuple):
+    count: jnp.array
+    inner_state: Any
+
+
+def below_or_zero(
+    inner: base.GradientTransformation,
+    threshold: float,
+    warmup: int = 0,
+) -> base.GradientTransformation:
+    "Sets all gradients element-wise to zero if abs(gradient) > `threshold`"
+    inner = base.with_extra_args_support(inner)
+
+    def init(params):
+        return BelowOrZero(
+            count=jnp.zeros([], jnp.int32),
+            inner_state=inner.init(params),
+        )
+
+    def update(updates, state: BelowOrZero, params=None, **extra_args):
+        inner_state = state.inner_state
+
+        def set_to_zero(updates):
+            return tree_map(
+                lambda arr: jnp.where(jnp.abs(arr) > threshold, 0.0, arr), updates
+            )
+
+        updates = jax.lax.cond(
+            state.count >= warmup, set_to_zero, lambda updates: updates, updates
+        )
+
+        updates, new_inner_state = inner.update(
+            updates, inner_state, params, **extra_args
+        )
+
+        return updates, BelowOrZero(
+            count=numerics.safe_int32_increment(state.count),
+            inner_state=new_inner_state,
+        )
+
+    return base.GradientTransformationExtraArgs(init=init, update=update)
+
+
 class SkipIfLargeUpdatesState(NamedTuple):
     toolarge_count: jnp.array
     count: jnp.array
@@ -152,6 +195,23 @@ def adam_norm_clip(
         )
 
     optimizer = optax.lookahead(optimizer, sync_period=6, slow_step_size=0.7)
+    return optimizer
+
+
+def adam_below_zero(
+    lr=3e-3,
+    steps=9000,
+    alpha=1e-7,
+    eps=1e-4,
+    clip=0.5,
+    warmup: int = 0,
+):
+    schedule = optax.cosine_decay_schedule(lr, steps, alpha)
+    optimizer = optax.adam(schedule, b2=0.99, eps=eps)
+    optimizer = optax.lookahead(optimizer, sync_period=6, slow_step_size=0.7)
+    optimizer = below_or_zero(optimizer, clip, warmup)
+    optimizer = replace_non_finite_updates(optimizer)
+
     return optimizer
 
 
