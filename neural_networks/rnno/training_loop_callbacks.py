@@ -1,3 +1,4 @@
+import time
 from collections import deque
 from functools import partial
 from pathlib import Path
@@ -253,6 +254,24 @@ class NanKillRunCallback(TrainingLoopCallback):
             print(
                 f"Parameters have converged to NaN at step {i_episode}. Exiting run.."
             )
+
+
+class TimingKillRunCallback(TrainingLoopCallback):
+    def __init__(self, max_run_time_seconds: float) -> None:
+        self.max_run_time_seconds = max_run_time_seconds
+        self.t0 = time.time()
+
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: LookaheadParams,
+        grads: list[dict],
+        sample_eval: dict,
+        loggers: list[Logger],
+    ) -> None:
+        if (time.time() - self.t0) > self.max_run_time_seconds:
+            send_kill_run_signal()
 
 
 def _repeat_state(state, repeats: int):
