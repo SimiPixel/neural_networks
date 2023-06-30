@@ -1,5 +1,5 @@
 from collections import defaultdict
-from types import SimpleNamespace
+from types import FunctionType, SimpleNamespace
 
 import haiku as hk
 import jax
@@ -17,6 +17,7 @@ def rnno_v2_reverse(
     state_init=jnp.zeros,
     message_init=jnp.zeros,
     custom_jvp: bool = False,
+    message_sent_transform: FunctionType = lambda msg: msg,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
@@ -56,6 +57,7 @@ def rnno_v2_reverse(
             if p != -1:
                 # leave message in mailbox of parent
                 local_message = send_msg_to_top(local_state)
+                local_message = message_sent_transform(local_message)
                 if standardize_message:
                     local_message = hk.LayerNorm(-1, False, False)(local_message)
                 mailbox[p] = mailbox[p] + local_message
@@ -88,6 +90,7 @@ def rnno_v2_reverse(
 
             # send message to bot
             local_message = send_msg_to_bot(local_state)
+            local_message = message_sent_transform(local_message)
             if standardize_message:
                 local_message = hk.LayerNorm(-1, False, False)(local_message)
             msg[i] = local_message
