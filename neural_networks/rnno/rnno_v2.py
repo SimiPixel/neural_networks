@@ -18,6 +18,7 @@ def rnno_v2(
     message_init=jnp.zeros,
     custom_jvp: bool = False,
     message_sent_transform: FunctionType = lambda msg: msg,
+    message_stop_gradient: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
@@ -55,7 +56,11 @@ def rnno_v2(
             local_state, _ = recv_external(local_measurement, local_state)
 
             # send message to bot
-            local_message = send_msg_to_bot(local_state)
+            if message_stop_gradient:
+                local_state_msg = jax.lax.stop_gradient(local_state)
+            else:
+                local_state_msg = local_state
+            local_message = send_msg_to_bot(local_state_msg)
             local_message = message_sent_transform(local_message)
             if standardize_message:
                 local_message = hk.LayerNorm(-1, False, False)(local_message)
@@ -92,7 +97,11 @@ def rnno_v2(
             y[name] = normalize(send_external(local_state))
 
             # leave message in mailbox of parent
-            local_message = send_msg_to_top(local_state)
+            if message_stop_gradient:
+                local_state_msg = jax.lax.stop_gradient(local_state)
+            else:
+                local_state_msg = local_state
+            local_message = send_msg_to_top(local_state_msg)
             local_message = message_sent_transform(local_message)
             if standardize_message:
                 local_message = hk.LayerNorm(-1, False, False)(local_message)
