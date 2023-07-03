@@ -23,6 +23,19 @@ def _tree(sys, f, reverse: bool = False):
     )
 
 
+class MLP(hk.Module):
+    def __init__(
+        self, layers, final_act_fn=None, stop_grads=False, name: str | None = None
+    ):
+        super().__init__(name)
+        self._mlp = hk.nets.MLP(layers)
+        self._before = lambda x: jax.lax.stop_gradient(x) if stop_grads else lambda x: x
+        self._after = final_act_fn if final_act_fn else lambda x: x
+
+    def __call__(self, x):
+        return self._after(self._mlp(self._before(x)))
+
+
 def rnno_v2_minimal(
     sys: base.System,
     state_dim: int = 400,
@@ -40,26 +53,16 @@ def rnno_v2_minimal(
     if use_mgu:
         cell = MGU
 
-    I = lambda x: x
-
     @hk.without_apply_rng
     @hk.transform_with_state
     def timestep(X):
         recv_cell = cell(state_dim)
-        send_msg = hk.Sequential(
-            [
-                lambda x: jax.lax.stop_gradient(x) if message_stop_grads else I,
-                hk.nets.MLP([state_dim, message_dim]),
-                lambda x: jnp.tanh(x) if message_tanh else I,
-            ]
+        send_msg = MLP(
+            [state_dim, message_dim],
+            jnp.tanh if message_tanh else None,
+            message_stop_grads,
         )
-
-        send_external = hk.Sequential(
-            [
-                hk.nets.MLP([state_dim, 4]),
-                lambda x: jnp.tanh(x) if quat_tanh else I,
-            ]
-        )
+        send_external = MLP([state_dim, 4], jnp.tanh if quat_tanh else None)
 
         state = hk.get_state("state", [sys.num_links(), state_dim], init=state_init)
         empty_message = hk.get_state("empty_message", [message_dim], init=message_init)
