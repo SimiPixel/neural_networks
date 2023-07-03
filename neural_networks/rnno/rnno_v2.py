@@ -7,6 +7,8 @@ import jax.numpy as jnp
 from x_xy import base, scan
 from x_xy.maths import safe_normalize, safe_normalize_custom_jvp
 
+from neural_networks.rnno.mgu import MGU
+
 
 def rnno_v2(
     sys: base.System,
@@ -19,6 +21,7 @@ def rnno_v2(
     custom_jvp: bool = False,
     message_sent_transform: FunctionType = lambda msg: msg,
     message_stop_gradient: bool = False,
+    use_mgu: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
@@ -27,12 +30,16 @@ def rnno_v2(
     else:
         normalize = safe_normalize
 
+    cell = hk.GRU
+    if use_mgu:
+        cell = MGU
+
     @hk.without_apply_rng
     @hk.transform_with_state
     def timestep(X):
-        recv_msg_from_top = hk.GRU(state_dim)
-        recv_external = hk.GRU(state_dim)
-        recv_msg_from_bot = hk.GRU(state_dim)
+        recv_msg_from_top = cell(state_dim)
+        recv_external = cell(state_dim)
+        recv_msg_from_bot = cell(state_dim)
         send_msg_to_bot = hk.nets.MLP([state_dim, message_dim])
         send_msg_to_top = hk.nets.MLP([state_dim, message_dim])
         send_external = hk.nets.MLP([state_dim, 4])

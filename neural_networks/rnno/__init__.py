@@ -8,6 +8,7 @@ from .dustin_exp.dustin_exp import (
 )
 from .rnno_v1 import rnno_v1
 from .rnno_v2 import rnno_v2
+from .rnno_v2_minimal import rnno_v2_minimal
 from .rnno_v2_reverse import rnno_v2_reverse
 from .train import train
 from .training_loop import TrainingLoopCallback, send_kill_run_signal
