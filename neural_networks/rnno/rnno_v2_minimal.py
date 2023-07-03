@@ -30,6 +30,9 @@ def rnno_v2_minimal(
     state_init=jnp.zeros,
     message_init=jnp.zeros,
     use_mgu: bool = False,
+    message_stop_grads: bool = False,
+    message_tanh: bool = False,
+    quat_tanh: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
@@ -37,12 +40,26 @@ def rnno_v2_minimal(
     if use_mgu:
         cell = MGU
 
+    I = lambda x: x
+
     @hk.without_apply_rng
     @hk.transform_with_state
     def timestep(X):
         recv_cell = cell(state_dim)
-        send_msg = hk.nets.MLP([state_dim, message_dim])
-        send_external = hk.nets.MLP([state_dim, 4])
+        send_msg = hk.Sequential(
+            [
+                lambda x: jax.lax.stop_gradient(x) if message_stop_grads else I,
+                hk.nets.MLP([state_dim, message_dim]),
+                lambda x: jnp.tanh(x) if message_tanh else I,
+            ]
+        )
+
+        send_external = hk.Sequential(
+            [
+                hk.nets.MLP([state_dim, 4]),
+                lambda x: jnp.tanh(x) if quat_tanh else I,
+            ]
+        )
 
         state = hk.get_state("state", [sys.num_links(), state_dim], init=state_init)
         empty_message = hk.get_state("empty_message", [message_dim], init=message_init)
