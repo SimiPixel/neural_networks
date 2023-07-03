@@ -28,8 +28,10 @@ class MLP(hk.Module):
         self, layers, final_act_fn=None, stop_grads=False, name: str | None = None
     ):
         super().__init__(name)
+        self._before = (
+            (lambda x: jax.lax.stop_gradient(x)) if stop_grads else lambda x: x
+        )
         self._mlp = hk.nets.MLP(layers)
-        self._before = lambda x: jax.lax.stop_gradient(x) if stop_grads else lambda x: x
         self._after = final_act_fn if final_act_fn else lambda x: x
 
     def __call__(self, x):
