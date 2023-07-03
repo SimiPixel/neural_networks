@@ -55,7 +55,11 @@ class TrainingLoop:
         T = tree_utils.tree_shape(self._sample_eval, 1)
 
         for logger in loggers:
-            logger.log(dict(n_params=n_params(params.fast), batchsize=batchsize, T=T))
+            if isinstance(params, LookaheadParams):
+                fast_params = params.fast
+            else:
+                fast_params = params
+            logger.log(dict(n_params=n_params(fast_params), batchsize=batchsize, T=T))
 
     @property
     def key(self):

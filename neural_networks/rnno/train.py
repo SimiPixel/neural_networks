@@ -71,7 +71,11 @@ def _build_step_fn(
     )
     def pmapped_loss_fn(params, state, X, y):
         pmean = lambda arr: jax.lax.pmean(arr, axis_name="devices")
-        (loss, state), grads = loss_fn(params.fast, state, X, y)
+        if isinstance(params, optax.LookaheadParams):
+            fast_params = params.fast
+        else:
+            fast_params = params
+        (loss, state), grads = loss_fn(fast_params, state, X, y)
         return (pmean(loss), state), pmean(grads)
 
     @jax.jit
@@ -114,6 +118,7 @@ def train(
     add_dustin_exp_callback: bool = True,
     key_network: jax.random.PRNGKey = key_network,
     key_generator: jax.random.PRNGKey = key_generator,
+    optimizer_uses_lookahead: bool = True,
 ):
     """Trains RNNO
 
@@ -161,8 +166,11 @@ def train(
     if initial_params is not None:
         params = initial_params
 
-    if not isinstance(params, optax.LookaheadParams):
+    if not isinstance(params, optax.LookaheadParams) and optimizer_uses_lookahead:
         initial_params = optax.LookaheadParams(params, params)
+    else:
+        initial_params = params
+    del params
 
     opt_state = optimizer.init(initial_params)
 

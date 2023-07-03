@@ -48,7 +48,11 @@ def _build_eval_fn(
     @partial(jax.pmap, in_axes=(None, 0, 0, 0), out_axes=None, axis_name="devices")
     def pmapped_eval_fn(params, state, X, y):
         pmean = lambda arr: jax.lax.pmean(arr, axis_name="devices")
-        values = eval_fn(params.slow, state, X, y)
+        if isinstance(params, LookaheadParams):
+            slow_params = params.slow
+        else:
+            slow_params = params
+        values = eval_fn(slow_params, state, X, y)
         return pmean(values)
 
     def expand_then_pmap_eval_fn(params, X, y):
@@ -175,7 +179,7 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
-        if not self.slow_and_fast:
+        if not self.slow_and_fast and isinstance(params, LookaheadParams):
             params = params.slow
 
         self._params.append(params)
@@ -244,7 +248,11 @@ class NanKillRunCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
-        params_fast_flat = tree_utils.batch_concat(params.fast, num_batch_dims=0)
+        if isinstance(params, LookaheadParams):
+            fast_params = params.fast
+        else:
+            fast_params = params
+        params_fast_flat = tree_utils.batch_concat(fast_params, num_batch_dims=0)
         params_is_nan = jnp.any(jnp.isnan(params_fast_flat))
 
         if params_is_nan:
