@@ -5,7 +5,7 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 from x_xy import base, scan
-from x_xy.maths import safe_normalize, safe_normalize_custom_jvp
+from x_xy.maths import safe_normalize
 
 from neural_networks.rnno.mgu import MGU
 
@@ -18,17 +18,13 @@ def rnno_v2(
     standardize_state: bool = False,
     state_init=jnp.zeros,
     message_init=jnp.zeros,
-    custom_jvp: bool = False,
     message_sent_transform: FunctionType = lambda msg: msg,
     message_stop_gradient: bool = False,
     use_mgu: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
-    if custom_jvp:
-        normalize = safe_normalize_custom_jvp
-    else:
-        normalize = safe_normalize
+    normalize = safe_normalize
 
     cell = hk.GRU
     if use_mgu:
