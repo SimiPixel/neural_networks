@@ -12,7 +12,7 @@ from neural_networks.rnno.mgu import MGU
 
 
 def _tree(sys, f, reverse: bool = False):
-    scan.tree(
+    return scan.tree(
         sys,
         f,
         "lll",

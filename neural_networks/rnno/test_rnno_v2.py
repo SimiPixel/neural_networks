@@ -1,10 +1,13 @@
 import jax
+import numpy as np
 import x_xy
+from x_xy.utils import pipeline
 
 from neural_networks.rnno import (
     LogGradsTrainingLoopCallBack,
     dustin_exp_xml,
     rnno_v2,
+    rnno_v2_minimal,
     rnno_v2_reverse,
     train,
 )
@@ -28,8 +31,29 @@ def finalize_fn(*args):
     return X, y
 
 
+def test_vmap_version_is_equal():
+    example = "test_morph_system/four_seg_seg1"
+    sys = x_xy.io.load_example(example)
+    seed = jax.random.PRNGKey(1)
+    gen = x_xy.algorithms.build_generator(
+        sys, x_xy.algorithms.RCMG_Config(T=10.0), finalize_fn=finalize_fn
+    )
+    X, _ = gen(seed)
+
+    def yhat(vmap_version: bool):
+        return pipeline.predict(
+            sys, lambda sys: rnno_v2_minimal(sys, 40, 20, vmap_version=vmap_version), X
+        )[0]
+
+    jax.tree_map(
+        lambda a, b: np.testing.assert_allclose(a, b, rtol=1e-3, atol=1e-6),
+        yhat(False),
+        yhat(True),
+    )
+
+
 def test_rnno_v2():
-    for rnno_fn in [rnno_v2, rnno_v2_reverse]:
+    for rnno_fn in [rnno_v2, rnno_v2_reverse, rnno_v2_minimal]:
         rnno_dustin = rnno_fn(x_xy.io.load_sys_from_str(dustin_exp_xml), 40, 20)
 
         for i, example in enumerate(x_xy.io.list_examples()):
@@ -39,7 +63,7 @@ def test_rnno_v2():
             gen = x_xy.algorithms.build_generator(
                 sys, x_xy.algorithms.RCMG_Config(T=10.0), finalize_fn=finalize_fn
             )
-            gen = x_xy.algorithms.batch_generator([gen, gen], [16, 16])
+            gen = x_xy.algorithms.batch_generator([gen, gen], [1, 1])
 
             X, y = gen(seed)
             X, y = jax.tree_map(lambda arr: arr[0], (X, y))
