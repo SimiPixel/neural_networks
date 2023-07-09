@@ -48,6 +48,7 @@ def rnno_v2_minimal(
     message_stop_grads: bool = False,
     message_tanh: bool = False,
     quat_tanh: bool = False,
+    vmap_version: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
@@ -55,60 +56,127 @@ def rnno_v2_minimal(
     if use_mgu:
         cell = MGU
 
-    @hk.without_apply_rng
-    @hk.transform_with_state
-    def timestep(X):
-        recv_cell = cell(state_dim)
-        send_msg = MLP(
-            [state_dim, message_dim],
-            jnp.tanh if message_tanh else None,
-            message_stop_grads,
-        )
-        send_external = MLP([state_dim, 4], jnp.tanh if quat_tanh else None)
+    if not vmap_version:
 
-        state = hk.get_state("state", [sys.num_links(), state_dim], init=state_init)
-        empty_message = hk.get_state("empty_message", [message_dim], init=message_init)
-
-        state = {i: state[i] for i in range(sys.num_links())}
-        msg = {-1: empty_message}
-
-        # Step 1a): Pass messages to leaves
-        def compute_messages(_, __, i: int, p: int, name: str):
-            msg[i] = send_msg(state[i])
-
-        _tree(sys, compute_messages)
-
-        # Step 1b) Pass messages to root
-        mailbox = defaultdict(lambda: empty_message)
-
-        def compute_mailbox(_, __, i: int, p: int, name: str):
-            if p != -1:
-                mailbox[p] = mailbox[p] + send_msg(state[i])
-
-        _tree(sys, compute_mailbox, reverse=True)
-
-        # Step 2) Update node states & compute quaternion
-        y = {}
-
-        def update_state(_, __, i: int, p: int, name: str):
-            local_measurement = (
-                jnp.concatenate((X[name]["acc"], X[name]["gyr"]))
-                if name in X
-                else jnp.zeros((6,))
+        @hk.without_apply_rng
+        @hk.transform_with_state
+        def timestep(X):
+            recv_cell = cell(state_dim)
+            send_msg = MLP(
+                [state_dim, message_dim],
+                jnp.tanh if message_tanh else None,
+                message_stop_grads,
             )
-            local_cell_input = tree_utils.batch_concat(
-                (local_measurement, msg[p], mailbox[i]), num_batch_dims=0
+            send_external = MLP([state_dim, 4], jnp.tanh if quat_tanh else None)
+
+            state = hk.get_state("state", [sys.num_links(), state_dim], init=state_init)
+            empty_message = hk.get_state(
+                "empty_message", [message_dim], init=message_init
             )
-            output, state[i] = recv_cell(local_cell_input, state[i])
-            if p != -1:
-                y[name] = safe_normalize(send_external(output))
 
-        _tree(sys, update_state)
+            state = {i: state[i] for i in range(sys.num_links())}
+            msg = {-1: empty_message}
 
-        state = jnp.concatenate([state[i][None] for i in range(sys.num_links())])
-        hk.set_state("state", state)
+            # Step 1a): Pass messages to leaves
+            def compute_messages(_, __, i: int, p: int, name: str):
+                msg[i] = send_msg(state[i])
 
-        return y
+            _tree(sys, compute_messages)
+
+            # Step 1b) Pass messages to root
+            mailbox = defaultdict(lambda: empty_message)
+
+            def compute_mailbox(_, __, i: int, p: int, name: str):
+                if p != -1:
+                    mailbox[p] = mailbox[p] + send_msg(state[i])
+
+            _tree(sys, compute_mailbox, reverse=True)
+
+            # Step 2) Update node states & compute quaternion
+            y = {}
+
+            def update_state(_, __, i: int, p: int, name: str):
+                local_measurement = (
+                    jnp.concatenate((X[name]["acc"], X[name]["gyr"]))
+                    if name in X
+                    else jnp.zeros((6,))
+                )
+                local_cell_input = tree_utils.batch_concat(
+                    (local_measurement, msg[p], mailbox[i]), num_batch_dims=0
+                )
+                output, state[i] = recv_cell(local_cell_input, state[i])
+                if p != -1:
+                    y[name] = safe_normalize(send_external(output))
+
+            _tree(sys, update_state)
+
+            state = jnp.concatenate([state[i][None] for i in range(sys.num_links())])
+            hk.set_state("state", state)
+
+            return y
+
+    else:
+        parent_array = jnp.array(sys.link_parents, dtype=jnp.int32)
+
+        @hk.without_apply_rng
+        @hk.transform_with_state
+        def timestep(X):
+            recv_cell = cell(state_dim)
+            send_msg = MLP(
+                [state_dim, message_dim],
+                jnp.tanh if message_tanh else None,
+                message_stop_grads,
+            )
+            send_external = MLP([state_dim, 4], jnp.tanh if quat_tanh else None)
+
+            state = hk.get_state("state", [sys.num_links(), state_dim], init=state_init)
+            empty_message = hk.get_state(
+                "empty_message", [1, message_dim], init=message_init
+            )
+            mailbox = jnp.repeat(empty_message, sys.num_links(), axis=0)
+            msg = jnp.concatenate((jax.vmap(send_msg)(state), empty_message))
+
+            links = jnp.arange(sys.num_links())
+
+            def accumulate_message(link):
+                return jnp.sum(
+                    jnp.where(
+                        jnp.repeat(
+                            (parent_array == link)[:, None], message_dim, axis=-1
+                        ),
+                        msg[:-1],
+                        mailbox,
+                    ),
+                    axis=0,
+                )
+
+            mailbox = jax.vmap(accumulate_message)(links)
+
+            def cell_input(_, __, i: int, p: int, name: str):
+                local_measurement = (
+                    jnp.concatenate((X[name]["acc"], X[name]["gyr"]))
+                    if name in X
+                    else jnp.zeros((6,))
+                )
+                local_cell_input = tree_utils.batch_concat(
+                    (local_measurement, msg[p], mailbox[i]), num_batch_dims=0
+                )
+                return local_cell_input
+
+            stacked_cell_input = _tree(sys, cell_input)
+
+            def update_state(cell_input, state):
+                output, state = recv_cell(cell_input, state)
+                return safe_normalize(send_external(output)), state
+
+            y, state = jax.vmap(update_state)(stacked_cell_input, state)
+            hk.set_state("state", state)
+
+            return {
+                sys.idx_to_name(i): y[i]
+                for i in range(sys.num_links())
+                if sys.link_parents[i] != -1
+            }
 
     def init(key, X):
         "Returns: (params, state)"
