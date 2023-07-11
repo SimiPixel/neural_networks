@@ -154,6 +154,68 @@ class DustinExperiment(TrainingLoopCallback):
         metrices.update(self.last_metrices)
 
 
+default_metrices_eval_xy = {
+    "mae_deg": (
+        lambda q, qhat: maths.angle_error(q, qhat),
+        lambda arr: jnp.rad2deg(jnp.mean(_warm_up_doesnot_count(arr), axis=(0, 1))),
+    ),
+    "q90_ae_deg": (
+        lambda q, qhat: maths.angle_error(q, qhat),
+        lambda arr: jnp.rad2deg(
+            jnp.mean(jnp.quantile(_warm_up_doesnot_count(arr), 0.90, axis=1), axis=0)
+        ),
+    ),
+}
+
+
+class EvalXyTrainingLoopCallback(TrainingLoopCallback):
+    def __init__(
+        self,
+        network: hk.TransformedWithState,
+        X: dict,
+        y: dict,
+        metric_identifier: str,
+        eval_every: int = 5,
+    ):
+        "X, y is batched."
+        self.sample = (X, y)
+
+        # delete batchsize dimension for init of state
+        consume = jax.random.PRNGKey(1)
+        _, state = network.init(consume, tree_utils.tree_slice(self.sample[0], 0))
+        batchsize = tree_utils.tree_shape(self.sample)
+        state = _repeat_state(state, batchsize)
+        self.eval_fn = _build_eval_fn(
+            default_metrices_eval_xy,
+            network.apply,
+            state,
+            *distribute_batchsize(batchsize),
+        )
+        self.eval_every = eval_every
+        self.metric_identifier = metric_identifier
+
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: LookaheadParams,
+        grads: list[dict],
+        sample_eval: dict,
+        loggers: list[Logger],
+    ):
+        if self.eval_every == -1:
+            return
+
+        if (i_episode % self.eval_every) == 0:
+            self.last_metrices = {
+                self.metric_identifier: self.eval_fn(
+                    params, self.sample[0], self.sample[1]
+                )
+            }
+
+        metrices.update(self.last_metrices)
+
+
 class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
     def __init__(
         self,
