@@ -178,9 +178,11 @@ class EvalXyTrainingLoopCallback(TrainingLoopCallback):
         metric_identifier: str,
         eval_every: int = 5,
         warmup: int = 500,
-        cooloff: int = 0,
+        cooloff: int = 1,
     ):
         "X, y is batched."
+        assert cooloff > 0
+
         self.sample = (X, y)
 
         # delete batchsize dimension for init of state
