@@ -154,18 +154,19 @@ class DustinExperiment(TrainingLoopCallback):
         metrices.update(self.last_metrices)
 
 
-default_metrices_eval_xy = {
-    "mae_deg": (
-        lambda q, qhat: maths.angle_error(q, qhat),
-        lambda arr: jnp.rad2deg(jnp.mean(_warm_up_doesnot_count(arr), axis=(0, 1))),
-    ),
-    "q90_ae_deg": (
-        lambda q, qhat: maths.angle_error(q, qhat),
-        lambda arr: jnp.rad2deg(
-            jnp.mean(jnp.quantile(_warm_up_doesnot_count(arr), 0.90, axis=1), axis=0)
+def default_metrices_eval_xy(warmup: int, cooloff: int):
+    return {
+        "mae_deg": (
+            lambda q, qhat: maths.angle_error(q, qhat),
+            lambda arr: jnp.rad2deg(jnp.mean(arr[:, warmup:-cooloff], axis=(0, 1))),
         ),
-    ),
-}
+        "q90_ae_deg": (
+            lambda q, qhat: maths.angle_error(q, qhat),
+            lambda arr: jnp.rad2deg(
+                jnp.mean(jnp.quantile(arr[:, warmup:-cooloff], 0.90, axis=1), axis=0)
+            ),
+        ),
+    }
 
 
 class EvalXyTrainingLoopCallback(TrainingLoopCallback):
@@ -176,6 +177,8 @@ class EvalXyTrainingLoopCallback(TrainingLoopCallback):
         y: dict,
         metric_identifier: str,
         eval_every: int = 5,
+        warmup: int = 500,
+        cooloff: int = 0,
     ):
         "X, y is batched."
         self.sample = (X, y)
@@ -186,7 +189,7 @@ class EvalXyTrainingLoopCallback(TrainingLoopCallback):
         batchsize = tree_utils.tree_shape(self.sample)
         state = _repeat_state(state, batchsize)
         self.eval_fn = _build_eval_fn(
-            default_metrices_eval_xy,
+            default_metrices_eval_xy(warmup, cooloff),
             network.apply,
             state,
             *distribute_batchsize(batchsize),
