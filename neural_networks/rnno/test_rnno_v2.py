@@ -1,14 +1,14 @@
 import jax
 import numpy as np
 import x_xy
-from x_xy.utils import pipeline
+from x_xy.subpkgs import pipeline
 
 from neural_networks.rnno import (
     LogGradsTrainingLoopCallBack,
     dustin_exp_xml,
     rnno_v2,
+    rnno_v2_dw,
     rnno_v2_minimal,
-    rnno_v2_reverse,
     train,
 )
 
@@ -53,8 +53,8 @@ def test_vmap_version_is_equal():
 
 
 def test_rnno_v2():
-    for rnno_fn in [rnno_v2, rnno_v2_reverse, rnno_v2_minimal]:
-        rnno_dustin = rnno_fn(x_xy.io.load_sys_from_str(dustin_exp_xml), 40, 20)
+    for rnno_fn in [rnno_v2_dw, rnno_v2_minimal]:
+        rnno_dustin = rnno_fn(x_xy.io.load_sys_from_str(dustin_exp_xml), 10, 2)
 
         for i, example in enumerate(x_xy.io.list_examples()):
             print("Example: ", example)
@@ -68,7 +68,7 @@ def test_rnno_v2():
             X, y = gen(seed)
             X, y = jax.tree_map(lambda arr: arr[0], (X, y))
 
-            rnno = rnno_fn(sys, 40, 20)
+            rnno = rnno_fn(sys, 10, 2)
 
             if i == 0:
                 params, state = rnno.init(seed, X)
