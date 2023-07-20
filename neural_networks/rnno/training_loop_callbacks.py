@@ -103,6 +103,16 @@ default_metrices_dustin_exp = {
 }
 
 
+def rename_keys(d: dict, rename: dict = {}):
+    new_d = {}
+    for key, value in d.items():
+        if key in rename:
+            new_d[rename[key]] = value
+        else:
+            new_d[key] = d[value]
+    return new_d
+
+
 class DustinExperiment(TrainingLoopCallback):
     def __init__(
         self,
@@ -111,8 +121,14 @@ class DustinExperiment(TrainingLoopCallback):
         metric_identifier: str = "dustin_exp",
         anchor: str = "seg1",
         q_inv: bool = True,
+        normalizer=None,
+        rename: dict = {},
     ):
-        self.sample = dustin_exp_Xy(anchor, q_inv)
+        X, y = dustin_exp_Xy(anchor, q_inv)
+        X, y = rename_keys(X, rename), rename_keys(y, rename)
+        if normalizer is not None:
+            X = normalizer(X)
+        self.sample = X, y
 
         # build network for dustin experiment which always
         # has 3 segments; Needs its own state
@@ -131,6 +147,7 @@ class DustinExperiment(TrainingLoopCallback):
         )
         self.eval_dustin_exp_every = eval_dustin_exp_every
         self.metric_identifier = metric_identifier
+        self.normalizer = normalizer
 
     def after_training_step(
         self,
