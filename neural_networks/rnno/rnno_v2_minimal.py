@@ -49,6 +49,7 @@ def rnno_v2_minimal(
     message_tanh: bool = False,
     quat_tanh: bool = False,
     vmap_version: bool = False,
+    random_matrix: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
@@ -122,11 +123,21 @@ def rnno_v2_minimal(
         @hk.transform_with_state
         def timestep(X):
             recv_cell = cell(state_dim)
-            send_msg = MLP(
-                [state_dim, message_dim],
-                jnp.tanh if message_tanh else None,
-                message_stop_grads,
-            )
+
+            if random_matrix:
+                input_size = state_dim
+                random_matrix_value = hk.get_state(
+                    "send_msg",
+                    [state_dim, message_dim],
+                    init=hk.initializers.TruncatedNormal(1 / jnp.sqrt(input_size)),
+                )
+                send_msg = lambda state: state @ random_matrix_value
+            else:
+                send_msg = MLP(
+                    [state_dim, message_dim],
+                    jnp.tanh if message_tanh else None,
+                    message_stop_grads,
+                )
             send_external = MLP([state_dim, 4], jnp.tanh if quat_tanh else None)
 
             state = hk.get_state("state", [sys.num_links(), state_dim], init=state_init)
