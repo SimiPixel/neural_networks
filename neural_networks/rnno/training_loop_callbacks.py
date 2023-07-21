@@ -10,11 +10,17 @@ import jax.numpy as jnp
 import tree_utils
 from optax import LookaheadParams
 from x_xy import maths
+from x_xy.io import load_sys_from_str
 from x_xy.utils import distribute_batchsize, expand_batchsize
 
 from neural_networks.io_params import save
 from neural_networks.logging import Logger, NeptuneLogger
-from neural_networks.rnno import dustin_exp_Xy
+from neural_networks.rnno import (
+    dustin_exp_xml_seg1,
+    dustin_exp_xml_seg2,
+    dustin_exp_xml_seg3,
+    dustin_exp_Xy,
+)
 from neural_networks.rnno.training_loop import (
     TrainingLoopCallback,
     send_kill_run_signal,
@@ -116,18 +122,20 @@ def rename_keys(d: dict, rename: dict = {}):
 class DustinExperiment(TrainingLoopCallback):
     def __init__(
         self,
-        network: hk.TransformedWithState,
+        rnno_fn: hk.TransformedWithState,
         eval_dustin_exp_every: int = -1,
         metric_identifier: str = "dustin_exp",
         anchor: str = "seg1",
         q_inv: bool = True,
-        normalizer=None,
-        rename: dict = {},
     ):
+        xml_str_dustin = {
+            "seg1": dustin_exp_xml_seg1,
+            "seg2": dustin_exp_xml_seg2,
+            "seg3": dustin_exp_xml_seg3,
+        }[anchor]
+        network = rnno_fn(load_sys_from_str(xml_str_dustin))
+
         X, y = dustin_exp_Xy(anchor, q_inv)
-        X, y = rename_keys(X, rename), rename_keys(y, rename)
-        if normalizer is not None:
-            X = normalizer(X)
         self.sample = X, y
 
         # build network for dustin experiment which always
@@ -147,7 +155,6 @@ class DustinExperiment(TrainingLoopCallback):
         )
         self.eval_dustin_exp_every = eval_dustin_exp_every
         self.metric_identifier = metric_identifier
-        self.normalizer = normalizer
 
     def after_training_step(
         self,
