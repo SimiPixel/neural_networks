@@ -64,13 +64,12 @@ def rnno_v2_minimal(
         def timestep(X):
             recv_cell = cell(state_dim)
             if random_matrix:
-                input_size = state_dim
                 random_matrix_value = hk.get_state(
                     "send_msg",
-                    [state_dim, message_dim],
-                    init=hk.initializers.TruncatedNormal(1 / jnp.sqrt(input_size)),
+                    [message_dim, state_dim],
+                    init=hk.initializers.Orthogonal(),
                 )
-                send_msg = lambda state: state @ random_matrix_value
+                send_msg = lambda state: random_matrix_value @ state
             else:
                 send_msg = MLP(
                     [state_dim, message_dim],
