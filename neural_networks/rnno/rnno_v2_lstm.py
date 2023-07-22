@@ -74,28 +74,43 @@ def rnno_v2_lstm(
     sys: base.System,
     hidden_state_dim: int = 400,
     message_dim: int = 200,
+    use_gru: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
     @hk.without_apply_rng
     @hk.transform_with_state
     def forward(X):
-        inner_cell = hk.LSTM(hidden_state_dim)
+        if use_gru:
+            inner_cell = hk.GRU(hidden_state_dim)
+        else:
+            inner_cell = hk.LSTM(hidden_state_dim)
         send_msg = hk.nets.MLP([hidden_state_dim, message_dim])
         send_quat = hk.nets.MLP([hidden_state_dim, 4])
 
-        state_h_and_c = hk.get_state(
-            "lstm_state", [sys.num_links(), 2 * hidden_state_dim], init=jnp.zeros
-        )
-        state = hk.LSTMState(
-            state_h_and_c[:, :hidden_state_dim], state_h_and_c[:, hidden_state_dim:]
-        )
+        if use_gru:
+            state = hk.get_state(
+                "gru_state", [sys.num_links(), hidden_state_dim], init=jnp.zeros
+            )
+        else:
+            state_h_and_c = hk.get_state(
+                "lstm_state", [sys.num_links(), 2 * hidden_state_dim], init=jnp.zeros
+            )
+            state = hk.LSTMState(
+                state_h_and_c[:, :hidden_state_dim], state_h_and_c[:, hidden_state_dim:]
+            )
+
         y, state = hk.dynamic_unroll(
             _make_rnno_cell_apply_fn(sys, inner_cell, send_msg, send_quat, message_dim),
             X,
             state,
         )
-        hk.set_state("lstm_state", jnp.concatenate((state.hidden, state.cell), axis=1))
+        if use_gru:
+            hk.set_state("gru_state", state)
+        else:
+            hk.set_state(
+                "lstm_state", jnp.concatenate((state.hidden, state.cell), axis=1)
+            )
         return y
 
     return forward
