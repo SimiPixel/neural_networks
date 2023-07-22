@@ -8,8 +8,6 @@ import tree_utils
 from x_xy import base, scan
 from x_xy.maths import safe_normalize
 
-from neural_networks.rnno.mgu import MGU
-
 
 def _tree(sys, f, reverse: bool = False):
     return scan.tree(
@@ -44,7 +42,7 @@ def rnno_v2_minimal(
     message_dim: int = 200,
     state_init=jnp.zeros,
     message_init=jnp.zeros,
-    use_mgu: bool = False,
+    cell=hk.GRU,
     message_stop_grads: bool = False,
     message_tanh: bool = False,
     quat_tanh: bool = False,
@@ -52,10 +50,6 @@ def rnno_v2_minimal(
     random_matrix: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
-
-    cell = hk.GRU
-    if use_mgu:
-        cell = MGU
 
     if not vmap_version:
 
