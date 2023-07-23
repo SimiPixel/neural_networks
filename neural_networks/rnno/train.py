@@ -14,7 +14,6 @@ from neural_networks.logging import Logger
 from neural_networks.rnno.optimizer import adam
 from neural_networks.rnno.training_loop import TrainingLoop, TrainingLoopCallback
 from neural_networks.rnno.training_loop_callbacks import (
-    DustinExperiment,
     EvalFnCallback,
     _build_eval_fn,
     _repeat_state,
@@ -111,11 +110,9 @@ def train(
     network: hk.TransformedWithState,
     optimizer=adam(),
     tbp: int = 1000,
-    network_dustin=None,
     loggers: list[Logger] = [],
     callbacks: list[TrainingLoopCallback] = [],
     initial_params: Optional[dict] = None,
-    add_dustin_exp_callback: bool = True,
     key_network: jax.random.PRNGKey = key_network,
     key_generator: jax.random.PRNGKey = key_generator,
     optimizer_uses_lookahead: bool = True,
@@ -128,20 +125,12 @@ def train(
         network (hk.TransformedWithState): RNNO network
         optimizer (_type_, optional): optimizer, see optimizer.py module
         tbp (int, optional): Truncated backpropagation through time step size
-        network_dustin (_type_, optional): RNNO network used for evaluation on dustin's
-            exp. Only RNNOv2 has the ability to be trained on a four segment chain,
-            yet be evaluated on a three segment setup.
         loggers: list of Loggers used to log the training progress.
         callbacks: callbacks of the TrainingLoop.
         initial_params: If given uses as initial parameters.
-        add_dustin_exp_callback: If `True` appends a callback that evalutaes the
-            Dustin experiment.
         key_network: PRNG Key that inits the network state and parameters.
         key_generator: PRNG Key that inits the data stream of the generator.
     """
-
-    if network_dustin is None:
-        network_dustin = network
 
     # test if generator is batched..
     key = jax.random.PRNGKey(0)
@@ -188,14 +177,7 @@ def train(
         default_metrices, network.apply, initial_state, pmap_size, vmap_size
     )
 
-    if add_dustin_exp_callback:
-        default_callbacks = [
-            EvalFnCallback(eval_fn),
-            DustinExperiment(network_dustin, 5),
-        ]
-    else:
-        default_callbacks = [EvalFnCallback(eval_fn)]
-
+    default_callbacks = [EvalFnCallback(eval_fn)]
     callbacks_all = default_callbacks + callbacks
 
     loop = TrainingLoop(

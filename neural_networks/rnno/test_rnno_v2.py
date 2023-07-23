@@ -5,7 +5,6 @@ from x_xy.subpkgs import pipeline
 
 from neural_networks.rnno import (
     LogGradsTrainingLoopCallBack,
-    dustin_exp_xml,
     rnno_v2,
     rnno_v2_dw,
     rnno_v2_minimal,
@@ -54,8 +53,6 @@ def test_vmap_version_is_equal():
 
 def test_rnno_v2():
     for rnno_fn in [rnno_v2_dw, rnno_v2_minimal]:
-        rnno_dustin = rnno_fn(x_xy.io.load_sys_from_str(dustin_exp_xml), 10, 2)
-
         for i, example in enumerate(x_xy.io.list_examples()):
             print("Example: ", example)
             sys = x_xy.io.load_example(example)
@@ -104,14 +101,11 @@ def test_rnno_v2():
                 gen,
                 5,
                 rnno,
-                network_dustin=rnno_dustin,
                 callbacks=[LogGradsTrainingLoopCallBack()],
             )
 
 
 def test_layernorm():
-    rnno_dustin = rnno_v2(x_xy.io.load_sys_from_str(dustin_exp_xml), 40, 20, True)
-
     # one is enough
     N = 1
 
@@ -155,4 +149,4 @@ def test_layernorm():
         if example == "symmetric" or example == "spherical_stiff" or example == "free":
             continue
 
-        train(gen, 5, rnno, network_dustin=rnno_dustin)
+        train(gen, 5, rnno)
