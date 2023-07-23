@@ -170,6 +170,18 @@ class NeptuneLogger(Logger):
         self.run["final_params/path_to_file"].log(path_to_file)
         self.run["final_params/params.pickle"].upload(path_to_file)
 
+    def log_video(self, path_to_file: str):
+        if self._stop_logging:
+            return
+
+        self.run["video"].upload(path_to_file)
+
+    def log_image(self, path_to_file: str):
+        if self._stop_logging:
+            return
+
+        self.run["image"].upload(path_to_file)
+
     def close(self):
         if not self._stop_logging:
             # Record exact end of training
