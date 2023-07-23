@@ -2,7 +2,7 @@
 
 ## Installation
 
-Create a new conda-env with `Python=3.10`.
+Create a new conda-env with `Python=3.10` or `Python=3.11`.
 Then,
 - `pip install git+https://github.com/SimiPixel/neural_networks.git`
 
