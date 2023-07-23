@@ -1,7 +1,6 @@
 import time
 from collections import deque
 from functools import partial
-from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 import haiku as hk
@@ -11,7 +10,7 @@ import tree_utils
 from optax import LookaheadParams
 from x_xy import maths
 from x_xy.io import load_sys_from_str
-from x_xy.utils import distribute_batchsize, expand_batchsize
+from x_xy.utils import distribute_batchsize, expand_batchsize, parse_path
 
 from neural_networks.io_params import save
 from neural_networks.logging import Logger, NeptuneLogger
@@ -66,6 +65,34 @@ def _build_eval_fn(
         return pmapped_eval_fn(params, initial_state, X, y)
 
     return expand_then_pmap_eval_fn
+
+
+def _build_eval_fn2(
+    eval_metrices: dict[str, Tuple[Callable, Callable]],
+    apply_fn,
+    initial_state,
+    pmap_size,
+    vmap_size,
+):
+    def eval_fn(params, X, y):
+        params = params.slow if isinstance(params, LookaheadParams) else params
+        X, y = expand_batchsize((X, y), pmap_size, vmap_size)
+        yhat, _ = jax.pmap(jax.vmap(lambda X: apply_fn(params, initial_state, X)))(X)
+
+        values = {}
+        for metric_name, (metric_fn, reduce_fn) in eval_metrices.items():
+            assert (
+                metric_name not in values
+            ), f"The metric identitifier {metric_name} is not unique"
+
+            pipe = lambda q, qhat: reduce_fn(
+                jax.vmap(jax.vmap(jax.vmap(metric_fn)))(q, qhat)
+            )
+            values.update({metric_name: jax.tree_map(pipe, y, yhat)})
+
+        return values
+
+    return eval_fn
 
 
 class EvalFnCallback(TrainingLoopCallback):
@@ -245,6 +272,51 @@ class EvalXyTrainingLoopCallback(TrainingLoopCallback):
         metrices.update(self.last_metrices)
 
 
+class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
+    def __init__(
+        self,
+        network: hk.TransformedWithState,
+        eval_metrices: dict[str, Tuple[Callable, Callable]],
+        X: dict,
+        y: dict,
+        metric_identifier: str,
+        eval_every: int = 5,
+    ):
+        "X, y is batched."
+        self.X, self.y = X, y
+        # delete batchsize dimension for init of state
+        consume = jax.random.PRNGKey(1)
+        _, initial_state = network.init(consume, tree_utils.tree_slice(X, 0))
+        batchsize = tree_utils.tree_shape(X)
+        self.eval_fn = _build_eval_fn(
+            eval_metrices,
+            network.apply,
+            initial_state,
+            *distribute_batchsize(batchsize),
+        )
+        self.eval_every = eval_every
+        self.metric_identifier = metric_identifier
+
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: LookaheadParams,
+        grads: list[dict],
+        sample_eval: dict,
+        loggers: list[Logger],
+    ):
+        if self.eval_every == -1:
+            return
+
+        if (i_episode % self.eval_every) == 0:
+            self.last_metrices = {
+                self.metric_identifier: self.eval_fn(params, self.X, self.y)
+            }
+
+        metrices.update(self.last_metrices)
+
+
 class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
     def __init__(
         self,
@@ -253,9 +325,7 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
         last_n_params: int = 1,
         slow_and_fast: bool = False,
     ):
-        self.path_to_file = str(
-            Path(path_to_file).expanduser().with_suffix("").with_suffix(".pickle")
-        )
+        self.path_to_file = parse_path(path_to_file, extension="pickle")
         self._upload_to_neptune = upload_to_neptune
         self._params = deque(maxlen=last_n_params)
         self.slow_and_fast = slow_and_fast
@@ -371,6 +441,15 @@ class TimingKillRunCallback(TrainingLoopCallback):
     ) -> None:
         if (time.time() - self.t0) > self.max_run_time_seconds:
             send_kill_run_signal()
+
+
+def make_utility_callbacks(params_path) -> list[TrainingLoopCallback]:
+    return [
+        SaveParamsTrainingLoopCallback(params_path),
+        LogGradsTrainingLoopCallBack(),
+        NanKillRunCallback(),
+        TimingKillRunCallback(23.5 * 3600),
+    ]
 
 
 def _repeat_state(state, repeats: int):
