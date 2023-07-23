@@ -174,13 +174,13 @@ class NeptuneLogger(Logger):
         if self._stop_logging:
             return
 
-        self.run["video"].upload(path_to_file)
+        self.run[f"video/{_file_name(path_to_file)}"].upload(path_to_file)
 
     def log_image(self, path_to_file: str):
         if self._stop_logging:
             return
 
-        self.run["image"].upload(path_to_file)
+        self.run[f"image/{_file_name(path_to_file)}"].upload(path_to_file)
 
     def close(self):
         if not self._stop_logging:
@@ -188,3 +188,7 @@ class NeptuneLogger(Logger):
             self.run["train/end"] = datetime.now()
 
         return super().close()
+
+
+def _file_name(path: str):
+    return path.split("/")[-1].split(".")[0]

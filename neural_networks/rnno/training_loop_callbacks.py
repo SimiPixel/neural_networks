@@ -257,10 +257,15 @@ def _build_eval_fn2(
     pmap_size,
     vmap_size,
 ):
+    @partial(jax.pmap, in_axes=(None, None, 0))
+    @partial(jax.vmap, in_axes=(None, None, 0))
+    def pmap_vmap_apply(params, initial_state, X):
+        return apply_fn(params, initial_state, X)[0]
+
     def eval_fn(params, X, y):
         params = params.slow if isinstance(params, LookaheadParams) else params
         X = expand_batchsize(X, pmap_size, vmap_size)
-        yhat, _ = jax.pmap(jax.vmap(lambda X: apply_fn(params, initial_state, X)))(X)
+        yhat = pmap_vmap_apply(params, initial_state, X)
         yhat = merge_batchsize(yhat, pmap_size, vmap_size)
 
         values, post_reduce1 = {}, {}
@@ -300,6 +305,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         plot: bool = False,
         render: bool = False,
         upload_to_neptune: bool = True,
+        render_0th_epoch: bool = False,
     ):
         "X, y is batched."
 
@@ -326,6 +332,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         self.eval_every = eval_every
         self.render_plot_every = render_plot_every
         self.metric_identifier = metric_identifier
+        self.render_0th_epoch = render_0th_epoch
 
     def after_training_step(
         self,
@@ -349,7 +356,8 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         metrices.update(self.last_metrices)
 
         if (i_episode % self.render_plot_every) == 0:
-            self.render_plot_worst()
+            if i_episode != 0 or self.render_0th_epoch:
+                self.render_plot_worst()
 
     def close(self):
         self.render_plot_worst()
