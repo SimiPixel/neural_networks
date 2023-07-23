@@ -8,9 +8,15 @@ import jax
 import jax.numpy as jnp
 import tree_utils
 from optax import LookaheadParams
-from x_xy import maths
+from x_xy import base, maths
 from x_xy.io import load_sys_from_str
-from x_xy.utils import distribute_batchsize, expand_batchsize, parse_path
+from x_xy.subpkgs import pipeline
+from x_xy.utils import (
+    distribute_batchsize,
+    expand_batchsize,
+    merge_batchsize,
+    parse_path,
+)
 
 from neural_networks.io_params import save
 from neural_networks.logging import Logger, NeptuneLogger
@@ -65,34 +71,6 @@ def _build_eval_fn(
         return pmapped_eval_fn(params, initial_state, X, y)
 
     return expand_then_pmap_eval_fn
-
-
-def _build_eval_fn2(
-    eval_metrices: dict[str, Tuple[Callable, Callable]],
-    apply_fn,
-    initial_state,
-    pmap_size,
-    vmap_size,
-):
-    def eval_fn(params, X, y):
-        params = params.slow if isinstance(params, LookaheadParams) else params
-        X, y = expand_batchsize((X, y), pmap_size, vmap_size)
-        yhat, _ = jax.pmap(jax.vmap(lambda X: apply_fn(params, initial_state, X)))(X)
-
-        values = {}
-        for metric_name, (metric_fn, reduce_fn) in eval_metrices.items():
-            assert (
-                metric_name not in values
-            ), f"The metric identitifier {metric_name} is not unique"
-
-            pipe = lambda q, qhat: reduce_fn(
-                jax.vmap(jax.vmap(jax.vmap(metric_fn)))(q, qhat)
-            )
-            values.update({metric_name: jax.tree_map(pipe, y, yhat)})
-
-        return values
-
-    return eval_fn
 
 
 class EvalFnCallback(TrainingLoopCallback):
@@ -272,29 +250,81 @@ class EvalXyTrainingLoopCallback(TrainingLoopCallback):
         metrices.update(self.last_metrices)
 
 
+def _build_eval_fn2(
+    eval_metrices: dict[str, Tuple[Callable, Callable, Callable]],
+    apply_fn,
+    initial_state,
+    pmap_size,
+    vmap_size,
+):
+    def eval_fn(params, X, y):
+        params = params.slow if isinstance(params, LookaheadParams) else params
+        X = expand_batchsize(X, pmap_size, vmap_size)
+        yhat, _ = jax.pmap(jax.vmap(lambda X: apply_fn(params, initial_state, X)))(X)
+        yhat = merge_batchsize(yhat, pmap_size, vmap_size)
+
+        values, post_reduce1 = {}, {}
+        for metric_name, (metric_fn, reduce_fn1, reduce_fn2) in eval_metrices.items():
+            assert (
+                metric_name not in values
+            ), f"The metric identitifier {metric_name} is not unique"
+
+            reduce1_errors_fn = lambda q, qhat: reduce_fn1(
+                jax.vmap(jax.vmap(metric_fn))(q, qhat)
+            )
+            post_reduce1_errors = jax.tree_map(reduce1_errors_fn, y, yhat)
+            values.update({metric_name: jax.tree_map(reduce_fn2, post_reduce1_errors)})
+            post_reduce1.update({metric_name: post_reduce1_errors})
+
+        return values, post_reduce1
+
+    return eval_fn
+
+
 class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
     def __init__(
         self,
-        network: hk.TransformedWithState,
-        eval_metrices: dict[str, Tuple[Callable, Callable]],
+        exp_name: str,
+        rnno_fn,
+        sys_noimu,
+        eval_metrices: dict[str, Tuple[Callable, Callable, Callable]],
         X: dict,
         y: dict,
+        xs: base.Transform,
+        sys_xs,
         metric_identifier: str,
+        render_plot_metric: str,
         eval_every: int = 5,
+        render_plot_every: int = 50,
+        maximal_error: bool = True,
+        plot: bool = False,
+        render: bool = False,
+        upload_to_neptune: bool = True,
     ):
         "X, y is batched."
-        self.X, self.y = X, y
+
+        network = rnno_fn(sys_noimu)
+        self.sys_noimu, self.sys_xs = sys_noimu, sys_xs
+        self.X, self.y, self.xs = X, y, xs
+        self.plot, self.render = plot, render
+        self.upload_to_neptune = upload_to_neptune
+        self.render_plot_metric = render_plot_metric
+        self.maximal_error = maximal_error
+        self.rnno_fn = rnno_fn
+        self.path = f"~/experiments/{exp_name}"
+
         # delete batchsize dimension for init of state
         consume = jax.random.PRNGKey(1)
         _, initial_state = network.init(consume, tree_utils.tree_slice(X, 0))
         batchsize = tree_utils.tree_shape(X)
-        self.eval_fn = _build_eval_fn(
+        self.eval_fn = _build_eval_fn2(
             eval_metrices,
             network.apply,
             initial_state,
             *distribute_batchsize(batchsize),
         )
         self.eval_every = eval_every
+        self.render_plot_every = render_plot_every
         self.metric_identifier = metric_identifier
 
     def after_training_step(
@@ -306,15 +336,82 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ):
+        self._params = params
+        self._loggers = loggers
+        self.i_episode = i_episode
+
         if self.eval_every == -1:
             return
 
         if (i_episode % self.eval_every) == 0:
-            self.last_metrices = {
-                self.metric_identifier: self.eval_fn(params, self.X, self.y)
-            }
-
+            point_estimates, self.per_seq = self.eval_fn(params, self.X, self.y)
+            self.last_metrices = {self.metric_identifier: point_estimates}
         metrices.update(self.last_metrices)
+
+        if (i_episode % self.render_plot_every) == 0:
+            self.render_plot_worst()
+
+    def close(self):
+        self.render_plot_worst()
+
+    def render_plot_worst(self):
+        if not self.plot and not self.render:
+            return
+
+        if isinstance(self._params, LookaheadParams):
+            params = self._params.slow
+        else:
+            params = self._params
+
+        reduce = jnp.argmax if self.maximal_error else jnp.argmin
+        idx = reduce(
+            jnp.mean(
+                tree_utils.batch_concat(self.per_seq[self.render_plot_metric]), axis=-1
+            )
+        )
+        X, y, xs = tree_utils.tree_slice((self.X, self.y, self.xs), idx)
+
+        render_path = parse_path(
+            self.path,
+            "videos",
+            f"animation_{self.metric_identifier}_{self.render_plot_metric}_"
+            f"idx={idx}_episode={self.i_episode}",
+            extension="mp4",
+        )
+
+        pipeline.predict(
+            self.sys_noimu,
+            self.rnno_fn,
+            X,
+            y,
+            xs,
+            self.sys_xs,
+            params,
+            plot=self.plot,
+            render=self.render,
+            render_path=render_path,
+            verbose=False,
+            show_cs=False,
+        )
+
+        if self.plot:
+            import matplotlib.pyplot as plt
+
+            plot_path = parse_path(
+                self.path,
+                "plots",
+                f"plot_{self.metric_identifier}_{self.render_plot_metric}_"
+                f"idx={idx}_episode={self.i_episode}",
+                extension="png",
+            )
+            plt.savefig(plot_path, dpi=300)
+
+        if self.upload_to_neptune:
+            logger = _find_neptune_logger(self._loggers)
+            if self.render:
+                logger.log_video(render_path)
+            if self.plot:
+                logger.log_image(plot_path)
 
 
 class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
@@ -355,12 +452,15 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
         save(params, self.path_to_file, overwrite=True)
 
         if self._upload_to_neptune:
-            for logger in self._loggers:
-                if isinstance(logger, NeptuneLogger):
-                    logger.log_params(self.path_to_file)
-                    break
-            else:
-                raise Exception(f"No `NeptuneLogger` was found in {self._loggers}")
+            logger = _find_neptune_logger(self._loggers)
+            logger.log_params(self.path_to_file)
+
+
+def _find_neptune_logger(loggers):
+    for logger in loggers:
+        if isinstance(logger, NeptuneLogger):
+            return logger
+    raise Exception(f"No `NeptuneLogger` was found in {loggers}")
 
 
 class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
