@@ -63,4 +63,4 @@ def test_rnno_v1():
             continue
 
         # test that it is trainable
-        train(gen, 3, rnno, add_dustin_exp_callback=False)
+        train(gen, 3, rnno)
