@@ -398,7 +398,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             plot=self.plot,
             render=self.render,
             render_path=render_path,
-            verbose=False,
+            verbose=True,
             show_cs=False,
         )
 
