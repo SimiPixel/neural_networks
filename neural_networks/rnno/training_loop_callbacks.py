@@ -387,20 +387,23 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             extension="mp4",
         )
 
-        pipeline.predict(
-            self.sys_noimu,
-            self.rnno_fn,
-            X,
-            y,
-            xs,
-            self.sys_xs,
-            params,
-            plot=self.plot,
-            render=self.render,
-            render_path=render_path,
-            verbose=True,
-            show_cs=False,
-        )
+        # only to test whether or not the second call of exactly the same
+        # data is also already slower
+        for _ in range(2):
+            pipeline.predict(
+                self.sys_noimu,
+                self.rnno_fn,
+                X,
+                y,
+                xs,
+                self.sys_xs,
+                params,
+                plot=self.plot,
+                render=self.render,
+                render_path=render_path,
+                verbose=True,
+                show_cs=False,
+            )
 
         if self.plot:
             import matplotlib.pyplot as plt
