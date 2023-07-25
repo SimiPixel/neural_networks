@@ -145,12 +145,13 @@ class NeptuneLogger(Logger):
         os.system("rm nvidia_smi.txt")
 
         # Log vispy
-        import vispy
+        if False:
+            import vispy
 
-        with open("vispy_sys_info.txt", "w") as f:
-            f.write(vispy.sys_info())
-        self.run["vispy_sys_info"].upload("vispy_sys_info.txt", wait=True)
-        os.system("rm vispy_sys_info.txt")
+            with open("vispy_sys_info.txt", "w") as f:
+                f.write(vispy.sys_info())
+            self.run["vispy_sys_info"].upload("vispy_sys_info.txt", wait=True)
+            os.system("rm vispy_sys_info.txt")
 
     def log(self, metrices) -> None:
         if self._stop_logging:
