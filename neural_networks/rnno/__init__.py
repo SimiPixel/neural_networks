@@ -16,7 +16,6 @@ from .train import train
 from .training_loop import TrainingLoopCallback, send_kill_run_signal
 from .training_loop_callbacks import (
     DustinExperiment,
-    EvalFnCallback,
     LogGradsTrainingLoopCallBack,
     NanKillRunCallback,
     SaveParamsTrainingLoopCallback,

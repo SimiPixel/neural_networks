@@ -19,7 +19,7 @@ from x_xy.utils import (
 )
 
 from neural_networks.io_params import save
-from neural_networks.logging import Logger, NeptuneLogger
+from neural_networks.logging import Logger, MultimediaLogger
 from neural_networks.rnno import (
     dustin_exp_xml_seg1,
     dustin_exp_xml_seg2,
@@ -73,7 +73,7 @@ def _build_eval_fn(
     return expand_then_pmap_eval_fn
 
 
-class EvalFnCallback(TrainingLoopCallback):
+class DefaultEvalFnCallback(TrainingLoopCallback):
     def __init__(self, eval_fn):
         self.eval_fn = eval_fn
 
@@ -86,7 +86,7 @@ class EvalFnCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ):
-        metrices.update(self.eval_fn(params, sample_eval[0], sample_eval[1]))
+        metrices.update({"train": self.eval_fn(params, sample_eval[0], sample_eval[1])})
 
 
 def _warm_up_doesnot_count(arr):
@@ -304,8 +304,8 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         maximal_error: bool = True,
         plot: bool = False,
         render: bool = False,
-        upload_to_neptune: bool = True,
-        render_0th_epoch: bool = False,
+        upload: bool = True,
+        render_0th_epoch: bool = True,
     ):
         "X, y is batched."
 
@@ -313,7 +313,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         self.sys_noimu, self.sys_xs = sys_noimu, sys_xs
         self.X, self.y, self.xs = X, y, xs
         self.plot, self.render = plot, render
-        self.upload_to_neptune = upload_to_neptune
+        self.upload = upload
         self.render_plot_metric = render_plot_metric
         self.maximal_error = maximal_error
         self.rnno_fn = rnno_fn
@@ -321,7 +321,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
 
         # delete batchsize dimension for init of state
         consume = jax.random.PRNGKey(1)
-        self.params, initial_state = network.init(consume, tree_utils.tree_slice(X, 0))
+        _, initial_state = network.init(consume, tree_utils.tree_slice(X, 0))
         batchsize = tree_utils.tree_shape(X)
         self.eval_fn = _build_eval_fn2(
             eval_metrices,
@@ -333,7 +333,6 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         self.render_plot_every = render_plot_every
         self.metric_identifier = metric_identifier
         self.render_0th_epoch = render_0th_epoch
-        self.i_episode = -1
 
     def after_training_step(
         self,
@@ -345,7 +344,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         loggers: list[Logger],
     ):
         self._params = params
-        # self._loggers = loggers
+        self._loggers = loggers
         self.i_episode = i_episode
 
         if self.eval_every == -1:
@@ -354,16 +353,16 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         if (i_episode % self.eval_every) == 0:
             point_estimates, self.per_seq = self.eval_fn(params, self.X, self.y)
             self.last_metrices = {self.metric_identifier: point_estimates}
-        metrices.update(self.last_metrices)
+        metrices.update({"val": self.last_metrices})
 
         if (i_episode % self.render_plot_every) == 0:
             if i_episode != 0 or self.render_0th_epoch:
-                self.render_plot_worst()
+                self._render_plot_worst()
 
     def close(self):
         self.render_plot_worst()
 
-    def render_plot_worst(self):
+    def _render_plot_worst(self):
         if not self.plot and not self.render:
             return
 
@@ -388,23 +387,20 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             extension="mp4",
         )
 
-        # only to test whether or not the second call of exactly the same
-        # data is also already slower
-        for _ in range(2):
-            pipeline.predict(
-                self.sys_noimu,
-                self.rnno_fn,
-                X,
-                y,
-                xs,
-                self.sys_xs,
-                params,
-                plot=self.plot,
-                render=self.render,
-                render_path=render_path,
-                verbose=True,
-                show_cs=False,
-            )
+        pipeline.predict(
+            self.sys_noimu,
+            self.rnno_fn,
+            X,
+            y,
+            xs,
+            self.sys_xs,
+            params,
+            plot=self.plot,
+            render=self.render,
+            render_path=render_path,
+            verbose=True,
+            show_cs=False,
+        )
 
         if self.plot:
             import matplotlib.pyplot as plt
@@ -418,8 +414,8 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             )
             plt.savefig(plot_path, dpi=300)
 
-        if self.upload_to_neptune:
-            logger = _find_neptune_logger(self._loggers)
+        if self.upload:
+            logger = _find_multimedia_logger(self._loggers)
             if self.render:
                 logger.log_video(render_path)
             if self.plot:
@@ -430,12 +426,12 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
     def __init__(
         self,
         path_to_file: str,
-        upload_to_neptune: bool = True,
+        upload: bool = True,
         last_n_params: int = 1,
         slow_and_fast: bool = False,
     ):
         self.path_to_file = parse_path(path_to_file, extension="pickle")
-        self._upload_to_neptune = upload_to_neptune
+        self.upload = upload
         self._params = deque(maxlen=last_n_params)
         self.slow_and_fast = slow_and_fast
         self._loggers = []
@@ -456,23 +452,22 @@ class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
         self._loggers = loggers
 
     def close(self):
-        # params is Lookahead object
         params = list(self._params)
         if len(params) == 1:
             params = params[0]
 
         save(params, self.path_to_file, overwrite=True)
 
-        if self._upload_to_neptune:
-            logger = _find_neptune_logger(self._loggers)
+        if self.upload:
+            logger = _find_multimedia_logger(self._loggers)
             logger.log_params(self.path_to_file)
 
 
-def _find_neptune_logger(loggers):
+def _find_multimedia_logger(loggers):
     for logger in loggers:
-        if isinstance(logger, NeptuneLogger):
+        if isinstance(logger, MultimediaLogger):
             return logger
-    raise Exception(f"No `NeptuneLogger` was found in {loggers}")
+    raise Exception(f"Neither `NeptuneLogger` nor `WandbLogger` was found in {loggers}")
 
 
 class LogGradsTrainingLoopCallBack(TrainingLoopCallback):

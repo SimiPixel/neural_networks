@@ -49,7 +49,7 @@ def test_save_params_loop_callback():
     params = {"matrix": jnp.zeros((100, 100))}
     params = optax.LookaheadParams(params, params)
     test_file = "~/params2/params.pickle"
-    logger = NeptuneLogger("iss/test", name=str(datetime.now()), force_logging=True)
+    logger = NeptuneLogger("iss/test", name=str(datetime.now()))
     n_episodes = 100
     callback = SaveParamsTrainingLoopCallback(test_file)
 

@@ -14,7 +14,7 @@ from neural_networks.logging import Logger
 from neural_networks.rnno.optimizer import adam
 from neural_networks.rnno.training_loop import TrainingLoop, TrainingLoopCallback
 from neural_networks.rnno.training_loop_callbacks import (
-    EvalFnCallback,
+    DefaultEvalFnCallback,
     _build_eval_fn,
     _repeat_state,
 )
@@ -177,8 +177,7 @@ def train(
         default_metrices, network.apply, initial_state, pmap_size, vmap_size
     )
 
-    default_callbacks = [EvalFnCallback(eval_fn)]
-    default_callbacks = []
+    default_callbacks = [DefaultEvalFnCallback(eval_fn)]
     callbacks_all = default_callbacks + callbacks
 
     loop = TrainingLoop(
