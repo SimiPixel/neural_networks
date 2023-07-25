@@ -176,19 +176,19 @@ class NeptuneLogger(Logger):
 
         print(f"Uploading file {path_to_file}")
         self.run["final_params/path_to_file"].log(path_to_file)
-        self.run["final_params/params.pickle"].upload(path_to_file)
+        self.run["final_params/params.pickle"].upload(path_to_file, wait=True)
 
     def log_video(self, path_to_file: str):
         if self._stop_logging:
             return
 
-        self.run[f"video/{_file_name(path_to_file)}"].upload(path_to_file)
+        self.run[f"video/{_file_name(path_to_file)}"].upload(path_to_file, wait=True)
 
     def log_image(self, path_to_file: str):
         if self._stop_logging:
             return
 
-        self.run[f"image/{_file_name(path_to_file)}"].upload(path_to_file)
+        self.run[f"image/{_file_name(path_to_file)}"].upload(path_to_file, wait=True)
 
     def close(self):
         if not self._stop_logging:
