@@ -195,6 +195,7 @@ class NeptuneLogger(Logger):
             # Record exact end of training
             self.run["train/end"] = datetime.now()
 
+        self.run.stop()
         return super().close()
 
 
