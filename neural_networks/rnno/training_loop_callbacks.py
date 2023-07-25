@@ -357,12 +357,12 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
 
         if (i_episode % self.render_plot_every) == 0:
             if i_episode != 0 or self.render_0th_epoch:
-                self._render_plot_worst()
+                self._render_plot()
 
     def close(self):
-        self.render_plot_worst()
+        self._render_plot()
 
-    def _render_plot_worst(self):
+    def _render_plot(self):
         if not self.plot and not self.render:
             return
 
@@ -403,8 +403,6 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         )
 
         if self.plot:
-            import matplotlib.pyplot as plt
-
             plot_path = parse_path(
                 self.path,
                 "plots",
@@ -412,7 +410,10 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
                 f"idx={idx}_episode={self.i_episode}",
                 extension="png",
             )
+            import matplotlib.pyplot as plt
+
             plt.savefig(plot_path, dpi=300)
+            plt.close()
 
         if self.upload:
             logger = _find_multimedia_logger(self._loggers)
