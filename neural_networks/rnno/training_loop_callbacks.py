@@ -321,7 +321,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
 
         # delete batchsize dimension for init of state
         consume = jax.random.PRNGKey(1)
-        _, initial_state = network.init(consume, tree_utils.tree_slice(X, 0))
+        self.params, initial_state = network.init(consume, tree_utils.tree_slice(X, 0))
         batchsize = tree_utils.tree_shape(X)
         self.eval_fn = _build_eval_fn2(
             eval_metrices,
@@ -333,6 +333,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         self.render_plot_every = render_plot_every
         self.metric_identifier = metric_identifier
         self.render_0th_epoch = render_0th_epoch
+        self.i_episode = -1
 
     def after_training_step(
         self,
@@ -344,7 +345,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         loggers: list[Logger],
     ):
         self._params = params
-        self._loggers = loggers
+        # self._loggers = loggers
         self.i_episode = i_episode
 
         if self.eval_every == -1:
