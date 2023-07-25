@@ -178,6 +178,7 @@ def train(
     )
 
     default_callbacks = [EvalFnCallback(eval_fn)]
+    default_callbacks = []
     callbacks_all = default_callbacks + callbacks
 
     loop = TrainingLoop(
