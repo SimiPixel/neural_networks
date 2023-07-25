@@ -383,7 +383,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             self.path,
             "videos",
             f"animation_{self.metric_identifier}_{self.render_plot_metric}_"
-            f"idx={idx}_episode={self.i_episode}",
+            f"idx={idx}_episode={self.i_episode}_maxError={int(self.maximal_error)}",
             extension="mp4",
         )
 

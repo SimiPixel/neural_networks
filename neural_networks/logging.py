@@ -7,8 +7,9 @@ from typing import Optional
 import jax
 import neptune
 import numpy as np
-import wandb
 from tree_utils import PyTree, tree_batch
+
+import wandb
 
 # An arbitrarily nested dictionary with jax.Array leaves; Or strings
 NestedDict = PyTree
@@ -73,7 +74,7 @@ class MultimediaLogger(Logger):
         pass
 
     def log(self, metrics: NestedDict):
-        for key, value in _flatten_convert_filter_nested_dict(metrics):
+        for key, value in _flatten_convert_filter_nested_dict(metrics).items():
             self.log_key_value(key, value)
 
     @abstractmethod
@@ -175,7 +176,8 @@ class WandbLogger(MultimediaLogger):
         wandb.log({"video": wandb.Video(path, caption=caption, fps=fps)})
 
     def log_image(self, path: str, caption: Optional[str] = None):
-        wandb.log({"image": wandb.Image(path, caption=caption)})
+        # wandb.log({"image": wandb.Image(path, caption=caption)})
+        wandb.save(path, policy="now")
 
     def log_txt(self, path: str, wait: bool = True):
         wandb.save(path, policy="now")
