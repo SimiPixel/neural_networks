@@ -86,7 +86,7 @@ class DefaultEvalFnCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ):
-        metrices.update({"train": self.eval_fn(params, sample_eval[0], sample_eval[1])})
+        metrices.update(self.eval_fn(params, sample_eval[0], sample_eval[1]))
 
 
 def _warm_up_doesnot_count(arr):
@@ -353,7 +353,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         if (i_episode % self.eval_every) == 0:
             point_estimates, self.per_seq = self.eval_fn(params, self.X, self.y)
             self.last_metrices = {self.metric_identifier: point_estimates}
-        metrices.update({"val": self.last_metrices})
+        metrices.update(self.last_metrices)
 
         if (i_episode % self.render_plot_every) == 0:
             if i_episode != 0 or self.render_0th_epoch:
