@@ -197,6 +197,10 @@ class WandbLogger(MultimediaLogger):
         caption: Optional[str] = None,
         step: Optional[int] = None,
     ):
+        # TODO >>>
+        wandb.save(path, policy="now")
+        return
+        # <<<
         data = {"video": wandb.Video(path, caption=caption, fps=fps)}
         if step is not None:
             data.update({STEP_METRIC_NAME: step})
