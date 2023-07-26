@@ -13,6 +13,7 @@ import wandb
 
 # An arbitrarily nested dictionary with jax.Array leaves; Or strings
 NestedDict = PyTree
+STEP_METRIC_NAME = "i_episode"
 
 
 class Logger(ABC):
@@ -62,11 +63,17 @@ class DictLogger(Logger):
 
 class MultimediaLogger(Logger):
     @abstractmethod
-    def log_image(self, path: str):
+    def log_image(self, path: str, caption: Optional[str] = None):
         pass
 
     @abstractmethod
-    def log_video(self, path: str):
+    def log_video(
+        self,
+        path: str,
+        fps: int = 25,
+        caption: Optional[str] = None,
+        step: Optional[int] = None,
+    ):
         pass
 
     @abstractmethod
@@ -74,11 +81,12 @@ class MultimediaLogger(Logger):
         pass
 
     def log(self, metrics: NestedDict):
+        step = metrics[STEP_METRIC_NAME] if STEP_METRIC_NAME in metrics else None
         for key, value in _flatten_convert_filter_nested_dict(metrics).items():
-            self.log_key_value(key, value)
+            self.log_key_value(key, value, step=step)
 
     @abstractmethod
-    def log_key_value(self, key: str, value: str | float):
+    def log_key_value(self, key: str, value: str | float, step: Optional[int] = None):
         pass
 
     def log_command_output(self, command: str):
@@ -136,7 +144,7 @@ class NeptuneLogger(MultimediaLogger):
 
         _log_environment(self)
 
-    def log_key_value(self, key: str, value: str | float):
+    def log_key_value(self, key: str, value: str | float, step: Optional[int] = None):
         self.run[key] = value
 
     def log_params(self, path: str):
@@ -144,10 +152,16 @@ class NeptuneLogger(MultimediaLogger):
         # if we wouldn't wait then the run might end before upload finishes
         self.run[f"params/{_file_name(path, extension=True)}"].upload(path, wait=True)
 
-    def log_video(self, path: str):
+    def log_video(
+        self,
+        path: str,
+        fps: int = 25,
+        caption: Optional[str] = None,
+        step: Optional[int] = None,
+    ):
         self.run[f"video/{_file_name(path, extension=True)}"].upload(path)
 
-    def log_image(self, path: str):
+    def log_image(self, path: str, caption: Optional[str] = None):
         self.run[f"image/{_file_name(path, extension=True)}"].upload(path)
 
     def log_txt(self, path: str, wait: bool = True):
@@ -164,16 +178,29 @@ class NeptuneLogger(MultimediaLogger):
 class WandbLogger(MultimediaLogger):
     def __init__(self):
         _log_environment(self)
+        wandb.run.define_metric(STEP_METRIC_NAME)
 
-    def log_key_value(self, key: str, value: str | float):
-        wandb.log({key: value})
+    def log_key_value(self, key: str, value: str | float, step: Optional[int] = None):
+        data = {key: value}
+        if step is not None:
+            data.update({STEP_METRIC_NAME: step})
+        wandb.log(data)
 
     def log_params(self, path: str):
         self._print_upload_file(path)
         wandb.save(path, policy="now")
 
-    def log_video(self, path: str, fps: int = 25, caption: Optional[str] = None):
-        wandb.log({"video": wandb.Video(path, caption=caption, fps=fps)})
+    def log_video(
+        self,
+        path: str,
+        fps: int = 25,
+        caption: Optional[str] = None,
+        step: Optional[int] = None,
+    ):
+        data = {"video": wandb.Video(path, caption=caption, fps=fps)}
+        if step is not None:
+            data.update({STEP_METRIC_NAME: step})
+        wandb.log(data)
 
     def log_image(self, path: str, caption: Optional[str] = None):
         # wandb.log({"image": wandb.Image(path, caption=caption)})

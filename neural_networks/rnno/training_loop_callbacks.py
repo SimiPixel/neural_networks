@@ -422,7 +422,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         if self.upload:
             logger = _find_multimedia_logger(self._loggers)
             if self.render:
-                logger.log_video(render_path)
+                logger.log_video(render_path, step=self.i_episode)
             if self.plot:
                 logger.log_image(plot_path)
 
