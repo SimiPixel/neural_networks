@@ -537,6 +537,19 @@ class NanKillRunCallback(TrainingLoopCallback):
             )
 
 
+class LogEpisodeTrainingLoopCallback(TrainingLoopCallback):
+    def after_training_step(
+        self,
+        i_episode: int,
+        metrices: dict,
+        params: LookaheadParams,
+        grads: list[dict],
+        sample_eval: dict,
+        loggers: list[Logger],
+    ) -> None:
+        metrices.update({"i_episode": i_episode})
+
+
 class TimingKillRunCallback(TrainingLoopCallback):
     def __init__(self, max_run_time_seconds: float) -> None:
         self.max_run_time_seconds = max_run_time_seconds
@@ -561,6 +574,7 @@ def make_utility_callbacks(params_path) -> list[TrainingLoopCallback]:
         LogGradsTrainingLoopCallBack(),
         NanKillRunCallback(),
         TimingKillRunCallback(23.5 * 3600),
+        LogEpisodeTrainingLoopCallback(),
     ]
 
 
