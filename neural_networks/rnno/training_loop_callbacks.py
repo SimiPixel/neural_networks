@@ -379,11 +379,16 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         )
         X, y, xs = tree_utils.tree_slice((self.X, self.y, self.xs), idx)
 
+        def filename(prefix: str):
+            return (
+                f"{prefix}_{self.metric_identifier}_{self.render_plot_metric}_"
+                f"idx={idx}_episode={self.i_episode}_maxError={int(self.maximal_error)}"
+            )
+
         render_path = parse_path(
             self.path,
             "videos",
-            f"animation_{self.metric_identifier}_{self.render_plot_metric}_"
-            f"idx={idx}_episode={self.i_episode}_maxError={int(self.maximal_error)}",
+            filename("animation"),
             extension="mp4",
         )
 
@@ -406,8 +411,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             plot_path = parse_path(
                 self.path,
                 "plots",
-                f"plot_{self.metric_identifier}_{self.render_plot_metric}_"
-                f"idx={idx}_episode={self.i_episode}",
+                filename("plot"),
                 extension="png",
             )
             import matplotlib.pyplot as plt
