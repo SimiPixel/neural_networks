@@ -40,6 +40,7 @@ def rnno_v2_minimal(
     sys: base.System,
     state_dim: int = 400,
     message_dim: int = 200,
+    n_layers_message: int = 1,
     state_init=jnp.zeros,
     message_init=jnp.zeros,
     cell=hk.GRU,
@@ -66,7 +67,7 @@ def rnno_v2_minimal(
                 send_msg = lambda state: random_matrix_value @ state
             else:
                 send_msg = MLP(
-                    [state_dim, message_dim],
+                    [state_dim] + [message_dim] * n_layers_message,
                     jnp.tanh if message_tanh else None,
                     message_stop_grads,
                 )
@@ -135,7 +136,7 @@ def rnno_v2_minimal(
                 send_msg = lambda state: random_matrix_value @ state
             else:
                 send_msg = MLP(
-                    [state_dim, message_dim],
+                    [state_dim] + [message_dim] * n_layers_message,
                     jnp.tanh if message_tanh else None,
                     message_stop_grads,
                 )

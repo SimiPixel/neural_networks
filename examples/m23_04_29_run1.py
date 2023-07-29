@@ -106,7 +106,7 @@ def main():
     gen = x_xy.algorithms.batch_generator(gen, bs)
 
     rnno = rnno_v2(x_xy.io.load_sys_from_str(dustin_exp_xml), state_dim, msg_dim)
-    train(gen, episodes, rnno, loggers=[NeptuneLogger()])
+    train(gen, episodes, rnno, loggers=[NeptuneLogger("iss/generalizing-kt", "TEST")])
 
 
 if __name__ == "__main__":
