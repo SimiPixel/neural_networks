@@ -108,6 +108,33 @@ class MultimediaLogger(Logger):
         pass
 
 
+class MockMultimediaLogger(MultimediaLogger):
+    def log_image(self, path: str, caption: str | None = None):
+        pass
+
+    def log_video(
+        self,
+        path: str,
+        fps: int = 25,
+        caption: str | None = None,
+        step: int | None = None,
+    ):
+        pass
+
+    def log_params(self, path: str):
+        pass
+
+    def log_key_value(self, key: str, value: str | float, step: int | None = None):
+        pass
+
+    def log_txt(self, path: str, wait: bool = True):
+        pass
+
+    @staticmethod
+    def disable():
+        pass
+
+
 class NeptuneLogger(MultimediaLogger):
     def __init__(
         self,
