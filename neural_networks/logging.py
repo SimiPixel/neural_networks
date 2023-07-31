@@ -172,7 +172,7 @@ class NeptuneLogger(MultimediaLogger):
         _log_environment(self)
 
     def log_key_value(self, key: str, value: str | float, step: Optional[int] = None):
-        self.run[key] = value
+        self.run[key].log(value)
 
     def log_params(self, path: str):
         self._print_upload_file(path)
