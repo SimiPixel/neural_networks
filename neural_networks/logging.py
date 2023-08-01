@@ -247,6 +247,9 @@ class WandbLogger(MultimediaLogger):
     def disable():
         os.environ["WANDB_MODE"] = "offline"
 
+    def close(self):
+        wandb.run.finish()
+
 
 def disable_syncing_to_cloud():
     NeptuneLogger.disable()
