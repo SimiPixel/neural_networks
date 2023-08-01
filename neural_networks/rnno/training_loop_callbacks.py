@@ -307,6 +307,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         upload: bool = True,
         render_0th_epoch: bool = True,
         verbose: bool = True,
+        show_cs: bool = False,
     ):
         "X, y is batched."
 
@@ -335,6 +336,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         self.metric_identifier = metric_identifier
         self.render_0th_epoch = render_0th_epoch
         self.verbose = verbose
+        self.show_cs = show_cs
 
     def after_training_step(
         self,
@@ -409,7 +411,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             render=self.render,
             render_path=render_path,
             verbose=self.verbose,
-            show_cs=False,
+            show_cs=self.show_cs,
         )
 
         if self.plot:
