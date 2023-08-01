@@ -98,7 +98,7 @@ def rnno_v2_flags(
     def forward(X):
         if send_message_method == "mlp":
             send_msg = hk.nets.MLP(
-                [hidden_state_dim] + [message_dim] * send_message_n_layers
+                [hidden_state_dim] * send_message_n_layers + [message_dim]
             )
         elif send_message_method == "matrix":
             matrix = hk.get_state(
