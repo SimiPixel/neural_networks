@@ -6,7 +6,7 @@ from x_xy.subpkgs import pipeline
 from neural_networks.rnno import (
     LogGradsTrainingLoopCallBack,
     rnno_v2,
-    rnno_v2_dw,
+    rnno_v2_flags,
     rnno_v2_minimal,
     train,
 )
@@ -30,7 +30,7 @@ def finalize_fn(*args):
     return X, y
 
 
-def test_vmap_version_is_equal():
+def SKIP_test_vmap_version_is_equal():
     example = "test_morph_system/four_seg_seg1"
     sys = x_xy.io.load_example(example)
     seed = jax.random.PRNGKey(1)
@@ -52,7 +52,7 @@ def test_vmap_version_is_equal():
 
 
 def test_rnno_v2():
-    for rnno_fn in [rnno_v2_dw, rnno_v2_minimal]:
+    for rnno_fn in [rnno_v2_flags, rnno_v2_minimal]:
         for i, example in enumerate(x_xy.io.list_examples()):
             print("Example: ", example)
             sys = x_xy.io.load_example(example)

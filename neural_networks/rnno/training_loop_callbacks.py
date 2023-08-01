@@ -306,6 +306,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         render: bool = False,
         upload: bool = True,
         render_0th_epoch: bool = True,
+        verbose: bool = True,
     ):
         "X, y is batched."
 
@@ -333,6 +334,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         self.render_plot_every = render_plot_every
         self.metric_identifier = metric_identifier
         self.render_0th_epoch = render_0th_epoch
+        self.verbose = verbose
 
     def after_training_step(
         self,
@@ -392,6 +394,9 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             extension="mp4",
         )
 
+        if self.verbose:
+            print(f"--- EvalFnCallback {self.metric_identifier} --- ")
+
         pipeline.predict(
             self.sys_noimu,
             self.rnno_fn,
@@ -403,7 +408,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             plot=self.plot,
             render=self.render,
             render_path=render_path,
-            verbose=True,
+            verbose=self.verbose,
             show_cs=False,
         )
 
@@ -568,14 +573,16 @@ class TimingKillRunCallback(TrainingLoopCallback):
             send_kill_run_signal()
 
 
-def make_utility_callbacks(params_path) -> list[TrainingLoopCallback]:
-    return [
-        SaveParamsTrainingLoopCallback(params_path),
+def make_utility_callbacks(params_path=None) -> list[TrainingLoopCallback]:
+    callbacks = [
         LogGradsTrainingLoopCallBack(),
         NanKillRunCallback(),
         TimingKillRunCallback(23.5 * 3600),
         LogEpisodeTrainingLoopCallback(),
     ]
+    if params_path is not None:
+        callbacks.append(SaveParamsTrainingLoopCallback(params_path))
+    return callbacks
 
 
 def _repeat_state(state, repeats: int):
