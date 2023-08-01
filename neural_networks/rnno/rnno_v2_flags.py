@@ -166,3 +166,6 @@ class LSTM(hk.RNNCore):
         c = f * prev_state_c + jax.nn.sigmoid(i) * jnp.tanh(g)
         h = jax.nn.sigmoid(o) * jnp.tanh(c)
         return h, jnp.concatenate((h, c))
+
+    def initial_state(self, batch_size: int | None):
+        raise NotImplementedError
