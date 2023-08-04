@@ -483,9 +483,16 @@ def _find_multimedia_logger(loggers):
 
 
 class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
-    def __init__(self, print=False, kill_if_larger: Optional[float] = None) -> None:
+    def __init__(
+        self,
+        print=False,
+        kill_if_larger: Optional[float] = None,
+        consecutive_larger: int = 1,
+    ) -> None:
         self.print = print
         self.kill_if_larger = kill_if_larger
+        self.consecutive_larger = consecutive_larger
+        self.last_larger = deque(maxlen=consecutive_larger)
 
     def after_training_step(
         self,
@@ -501,8 +508,13 @@ class LogGradsTrainingLoopCallBack(TrainingLoopCallback):
             grads_flat = tree_utils.batch_concat(grads_tbp, num_batch_dims=0)
             grads_max = jnp.max(jnp.abs(grads_flat))
             grads_norm = jnp.linalg.norm(grads_flat)
-            if self.kill_if_larger is not None and grads_norm > self.kill_if_larger:
-                send_kill_run_signal()
+            if self.kill_if_larger is not None:
+                if grads_norm > self.kill_if_larger:
+                    self.last_larger.append(True)
+                else:
+                    self.last_larger.append(False)
+                if all(self.last_larger):
+                    send_kill_run_signal()
             gradient_log[f"grads_tbp_{i}_max"] = grads_max
             gradient_log[f"grads_tbp_{i}_l2norm"] = grads_norm
 
@@ -575,9 +587,15 @@ class TimingKillRunCallback(TrainingLoopCallback):
             send_kill_run_signal()
 
 
-def make_utility_callbacks(params_path=None) -> list[TrainingLoopCallback]:
+def make_utility_callbacks(
+    params_path=None,
+    kill_if_larger: Optional[float] = None,
+    consecutive_larger: int = 1,
+) -> list[TrainingLoopCallback]:
     callbacks = [
-        LogGradsTrainingLoopCallBack(),
+        LogGradsTrainingLoopCallBack(
+            kill_if_larger=kill_if_larger, consecutive_larger=consecutive_larger
+        ),
         NanKillRunCallback(),
         TimingKillRunCallback(23.5 * 3600),
         LogEpisodeTrainingLoopCallback(),
