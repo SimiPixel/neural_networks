@@ -166,13 +166,30 @@ def adam(
     eta: float = 0.01,
     gamma: float = 0.55,
     seed: int = 0,
+    warm_restarts: Optional[int] = None,
+    schedule: Optional[optax.Schedule] = None,
 ):
     # works well for rnno v2
     # clip: 0.1
     # adap clip: 0.05
     # eps: 1e-4
 
-    schedule = optax.cosine_decay_schedule(lr, steps, alpha)
+    if schedule is None:
+        if warm_restarts is not None:
+            decay_steps = int(steps / warm_restarts)
+            schedule = optax.sgdr_schedule(
+                [
+                    dict(
+                        init_value=lr,
+                        peak_value=lr,
+                        warmup_steps=1,
+                        decay_steps=decay_steps,
+                    )
+                ]
+                * warm_restarts
+            )
+        else:
+            schedule = optax.cosine_decay_schedule(lr, steps, alpha)
     optimizer = optax.chain(
         optax.clip(clip),
         optax.adaptive_grad_clip(adap_clip),
