@@ -64,7 +64,8 @@ class DictLogger(Logger):
         self.save(self._output_path)
 
     def save(self, path: str):
-        path = Path(path).with_suffix(".joblib")
+        path = Path(path).with_suffix(".joblib").expanduser()
+        path.mkdir(parents=True, exist_ok=True)
         joblib.dump(self._logs, path)
 
     @staticmethod
