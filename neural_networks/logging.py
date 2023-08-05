@@ -2,9 +2,11 @@ import logging
 import os
 import time
 from abc import ABC, abstractmethod, abstractstaticmethod
+from pathlib import Path
 from typing import Optional
 
 import jax
+import joblib
 import neptune
 import numpy as np
 from tree_utils import PyTree, tree_batch
@@ -30,9 +32,9 @@ def n_params(params):
 
 
 class DictLogger(Logger):
-    def __init__(self, print_on_close: bool = False):
+    def __init__(self, output_path: Optional[str] = None):
         self._logs = {}
-        self._print_on_close = print_on_close
+        self._output_path = output_path
 
     def log(self, metrics: NestedDict):
         metrics = _flatten_convert_filter_nested_dict(metrics, filter_nan_inf=False)
@@ -57,8 +59,20 @@ class DictLogger(Logger):
             )
 
     def close(self):
-        if self._print_on_close:
-            print(self._logs)
+        if self._output_path is None:
+            return
+        self.save(self._output_path)
+
+    def save(self, path: str):
+        path = Path(path).with_suffix(".joblib")
+        joblib.dump(self._logs, path)
+
+    @staticmethod
+    def load(path: str):
+        logs = joblib.load(path)
+        logger = DictLogger(path)
+        logger._logs = logs
+        return DictLogger
 
 
 class MultimediaLogger(Logger):
