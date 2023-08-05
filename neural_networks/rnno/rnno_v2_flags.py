@@ -20,7 +20,13 @@ def _tree(sys, f):
 
 
 def _make_rnno_cell_apply_fn(
-    sys, inner_cell, send_msg, send_quat, hidden_state_dim, message_dim
+    sys,
+    inner_cell,
+    send_msg,
+    send_quat,
+    hidden_state_dim,
+    message_dim,
+    send_message_stop_grads,
 ):
     parent_array = jnp.array(sys.link_parents, dtype=jnp.int32)
 
@@ -29,8 +35,11 @@ def _make_rnno_cell_apply_fn(
         mailbox = jnp.repeat(empty_message, sys.num_links(), axis=0)
         # message is sent using the hidden state of the last cell
         # for LSTM `prev_state` is of shape (2 * hidden_state_dim) du to cell state
+        prev_last_hidden_state = prev_state[:, -1, :hidden_state_dim]
+        if send_message_stop_grads:
+            prev_last_hidden_state = jax.lax.stop_gradient(prev_last_hidden_state)
         msg = jnp.concatenate(
-            (jax.vmap(send_msg)(prev_state[:, -1, :hidden_state_dim]), empty_message)
+            (jax.vmap(send_msg)(prev_last_hidden_state), empty_message)
         )
 
         def accumulate_message(link):
@@ -83,6 +92,7 @@ def rnno_v2_flags(
     send_message_n_layers: int = 1,
     send_message_method: str = "mlp",
     send_message_init: hk.initializers.Initializer = hk.initializers.Orthogonal(),
+    send_message_stop_grads: bool = False,
 ) -> SimpleNamespace:
     "Expects unbatched inputs. Batching via `vmap`"
 
@@ -120,7 +130,13 @@ def rnno_v2_flags(
 
         y, state = hk.dynamic_unroll(
             _make_rnno_cell_apply_fn(
-                sys, inner_cell, send_msg, send_quat, hidden_state_dim, message_dim
+                sys,
+                inner_cell,
+                send_msg,
+                send_quat,
+                hidden_state_dim,
+                message_dim,
+                send_message_stop_grads,
             ),
             X,
             state,
