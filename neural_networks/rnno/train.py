@@ -51,7 +51,8 @@ def _build_step_fn(
     vmap_size,
     optimizer,
     tbp,
-    warmup: int,
+    tbp_skip: int,
+    tbp_skip_keep_grads: bool,
 ):
     """Build step function that optimizes filter parameters based on `metric_fn`.
     `initial_state` has shape (pmap, vmap, state_dim)"""
@@ -59,9 +60,7 @@ def _build_step_fn(
     @partial(jax.value_and_grad, has_aux=True)
     def loss_fn(params, state, X, y):
         yhat, state = jax.vmap(apply_fn, in_axes=(None, 0, 0))(params, state, X)
-        pipe = lambda q, qhat: jnp.mean(
-            jax.vmap(jax.vmap(metric_fn))(q, qhat)[:, warmup:]
-        )
+        pipe = lambda q, qhat: jnp.mean(jax.vmap(jax.vmap(metric_fn))(q, qhat))
         error_tree = jax.tree_map(pipe, y, yhat)
         return jnp.mean(tree_utils.batch_concat(error_tree, 0)), state
 
@@ -93,10 +92,18 @@ def _build_step_fn(
 
         debug_grads = []
         state = initial_state
-        for X_tbp, y_tbp in tree_utils.tree_split((X, y), int(N / tbp), axis=-2):
+        for i, (X_tbp, y_tbp) in enumerate(
+            tree_utils.tree_split((X, y), int(N / tbp), axis=-2)
+        ):
             (loss, state), grads = pmapped_loss_fn(params, state, X_tbp, y_tbp)
             debug_grads.append(grads)
-            state = jax.lax.stop_gradient(state)
+
+            if tbp_skip > i:
+                if not tbp_skip_keep_grads:
+                    state = jax.lax.stop_gradient(state)
+                continue
+            else:
+                state = jax.lax.stop_gradient(state)
             params, opt_state = apply_grads(grads, params, opt_state)
 
         return params, opt_state, {"loss": loss}, debug_grads
@@ -113,7 +120,8 @@ def train(
     network: hk.TransformedWithState,
     optimizer=adam(),
     tbp: int = 1000,
-    warmup: int = 0,
+    tbp_skip: int = 0,
+    tbp_skip_keep_grads: bool = False,
     loggers: list[Logger] = [],
     callbacks: list[TrainingLoopCallback] = [],
     initial_params: Optional[dict] = None,
@@ -129,7 +137,9 @@ def train(
         network (hk.TransformedWithState): RNNO network
         optimizer (_type_, optional): optimizer, see optimizer.py module
         tbp (int, optional): Truncated backpropagation through time step size
-        warmup (int, optional): Skip `warmup` number of timesteps for loss calculation.
+        tbp_skip (int, optional): Skip `tbp_skip` number of first steps per epoch.
+        tbp_skip_keep_grads (bool, optional): Keeps grads between first `tbp_skip`
+            steps per epoch.
         loggers: list of Loggers used to log the training progress.
         callbacks: callbacks of the TrainingLoop.
         initial_params: If given uses as initial parameters.
@@ -176,7 +186,8 @@ def train(
         vmap_size,
         optimizer,
         tbp=tbp,
-        warmup=warmup,
+        tbp_skip=tbp_skip,
+        tbp_skip_keep_grads=tbp_skip_keep_grads,
     )
 
     eval_fn = _build_eval_fn(
