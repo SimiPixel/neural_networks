@@ -51,6 +51,7 @@ def _build_step_fn(
     vmap_size,
     optimizer,
     tbp,
+    warmup: int,
 ):
     """Build step function that optimizes filter parameters based on `metric_fn`.
     `initial_state` has shape (pmap, vmap, state_dim)"""
@@ -58,7 +59,9 @@ def _build_step_fn(
     @partial(jax.value_and_grad, has_aux=True)
     def loss_fn(params, state, X, y):
         yhat, state = jax.vmap(apply_fn, in_axes=(None, 0, 0))(params, state, X)
-        pipe = lambda q, qhat: jnp.mean(jax.vmap(jax.vmap(metric_fn))(q, qhat))
+        pipe = lambda q, qhat: jnp.mean(
+            jax.vmap(jax.vmap(metric_fn))(q, qhat)[:, warmup:]
+        )
         error_tree = jax.tree_map(pipe, y, yhat)
         return jnp.mean(tree_utils.batch_concat(error_tree, 0)), state
 
@@ -110,6 +113,7 @@ def train(
     network: hk.TransformedWithState,
     optimizer=adam(),
     tbp: int = 1000,
+    warmup: int = 0,
     loggers: list[Logger] = [],
     callbacks: list[TrainingLoopCallback] = [],
     initial_params: Optional[dict] = None,
@@ -125,6 +129,7 @@ def train(
         network (hk.TransformedWithState): RNNO network
         optimizer (_type_, optional): optimizer, see optimizer.py module
         tbp (int, optional): Truncated backpropagation through time step size
+        warmup (int, optional): Skip `warmup` number of timesteps for loss calculation.
         loggers: list of Loggers used to log the training progress.
         callbacks: callbacks of the TrainingLoop.
         initial_params: If given uses as initial parameters.
@@ -171,6 +176,7 @@ def train(
         vmap_size,
         optimizer,
         tbp=tbp,
+        warmup=warmup,
     )
 
     eval_fn = _build_eval_fn(
