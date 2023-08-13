@@ -59,11 +59,11 @@ class SkipIfLargeUpdatesState(NamedTuple):
     add_noise_state: AddNoiseState
 
 
-def _condition_skip_large_updates(updates: base.Updates, max_norm_sq: float):
+def _condition_not_toolarge(updates: base.Updates, max_norm_sq: float):
     norm_sq = jnp.sum(
         jnp.array([jnp.sum(p**2) for p in jax.tree_util.tree_leaves(updates)])
     )
-    # This will also return True if `norm_sq` is NaN.
+    # This will also return False if `norm_sq` is NaN or Inf.
     return norm_sq < max_norm_sq
 
 
@@ -78,7 +78,7 @@ def skip_large_update(
     gamma: float = 0.55,
     seed: int = 0,
 ) -> base.GradientTransformation:
-    "Also skips NaNs."
+    "Also skips NaNs and Infs."
     inner = base.with_extra_args_support(inner)
 
     if disturb_adaptive:
@@ -96,7 +96,7 @@ def skip_large_update(
 
     def update(updates, state: SkipIfLargeUpdatesState, params=None, **extra_args):
         inner_state = state.inner_state
-        not_toolarge = _condition_skip_large_updates(updates, max_norm_sq)
+        not_toolarge = _condition_not_toolarge(updates, max_norm_sq)
         toolarge_count = jnp.where(
             not_toolarge,
             jnp.zeros([], jnp.int32),
@@ -159,6 +159,7 @@ def adam(
     eps=1e-4,
     clip=0.1,
     adap_clip=0.05,
+    global_clip=1e8,
     skip_large_updates_l2_norm: Optional[float] = None,
     max_consecutive_toolarge: int = 1,
     large_updates_warmup: int = 0,
@@ -168,6 +169,7 @@ def adam(
     seed: int = 0,
     warm_restarts: Optional[int] = None,
     schedule: Optional[optax.Schedule] = None,
+    lookahead: bool = True,
 ):
     # works well for rnno v2
     # clip: 0.1
@@ -193,6 +195,7 @@ def adam(
     optimizer = optax.chain(
         optax.clip(clip),
         optax.adaptive_grad_clip(adap_clip),
+        optax.clip_by_global_norm(global_clip),
         optax.adam(schedule, b2=0.99, eps=eps),
     )
 
@@ -210,7 +213,8 @@ def adam(
             seed=seed,
         )
 
-    optimizer = optax.lookahead(optimizer, sync_period=6, slow_step_size=0.7)
+    if lookahead:
+        optimizer = optax.lookahead(optimizer, sync_period=6, slow_step_size=0.7)
     return optimizer
 
 
