@@ -1,3 +1,6 @@
+import random
+from typing import Optional
+
 import jax
 import tqdm
 import tree_utils
@@ -40,6 +43,7 @@ class TrainingLoop:
         step_fn,
         loggers: list[Logger],
         callbacks: list[TrainingLoopCallback] = [],
+        cycle_seed: Optional[int] = None,
     ):
         self._key = key
         self.i_episode = -1
@@ -49,6 +53,9 @@ class TrainingLoop:
         self._step_fn = step_fn
         self._loggers = loggers
         self._callbacks = callbacks
+        self._seeds = list(range(cycle_seed)) if cycle_seed else None
+        if cycle_seed is not None:
+            random.seed(1)
 
         self._sample_eval = generator(jax.random.PRNGKey(0))
         batchsize = tree_utils.tree_shape(self._sample_eval, 0)
@@ -63,8 +70,14 @@ class TrainingLoop:
 
     @property
     def key(self):
-        self._key, consume = jax.random.split(self._key)
-        return consume
+        if self._seeds is not None:
+            seed_idx = self.i_episode % len(self._seeds)
+            if seed_idx == 0:
+                random.shuffle(self._seeds)
+            return jax.random.PRNGKey(self._seeds[seed_idx])
+        else:
+            self._key, consume = jax.random.split(self._key)
+            return consume
 
     def run(self, n_episodes: int = 1, close_afterwards: bool = True):
         for _ in tqdm.tqdm(range(n_episodes)):

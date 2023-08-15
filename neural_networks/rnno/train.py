@@ -24,18 +24,9 @@ default_metrices = {
         lambda q, qhat: maths.angle_error(q, qhat),
         lambda arr: jnp.rad2deg(jnp.mean(arr, axis=(0, 1))),
     ),
-    "rmse_deg": (
-        lambda q, qhat: maths.angle_error(q, qhat) ** 2,
-        # we reduce time at axis=1, and batchsize at axis=0
-        lambda arr: jnp.rad2deg(jnp.mean(jnp.sqrt(jnp.mean(arr, axis=1)), axis=0)),
-    ),
-    "q90_ae_deg": (
+    "q95_ae_deg": (
         lambda q, qhat: maths.angle_error(q, qhat),
-        lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.90, axis=1), axis=0)),
-    ),
-    "q99_ae_deg": (
-        lambda q, qhat: maths.angle_error(q, qhat),
-        lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.99, axis=1), axis=0)),
+        lambda arr: jnp.rad2deg(jnp.mean(jnp.quantile(arr, 0.95, axis=1), axis=0)),
     ),
 }
 
@@ -128,6 +119,7 @@ def train(
     key_network: jax.random.PRNGKey = key_network,
     key_generator: jax.random.PRNGKey = key_generator,
     optimizer_uses_lookahead: bool = True,
+    cycle_seed: Optional[int] = None,
 ):
     """Trains RNNO
 
@@ -145,6 +137,8 @@ def train(
         initial_params: If given uses as initial parameters.
         key_network: PRNG Key that inits the network state and parameters.
         key_generator: PRNG Key that inits the data stream of the generator.
+        optimizer_uses_lookahead: Should be `True` if `optimizer` uses Lookahead.
+        cycle_seed: Cycle through `cycle_seed` number of unique seeds for generator.
     """
 
     # test if generator is batched..
@@ -205,6 +199,7 @@ def train(
         step_fn,
         loggers=loggers,
         callbacks=callbacks_all,
+        cycle_seed=cycle_seed,
     )
 
     loop.run(n_episodes)
