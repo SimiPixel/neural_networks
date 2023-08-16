@@ -1,6 +1,8 @@
+import os
 import time
 from collections import deque
 from functools import partial
+from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 import haiku as hk
@@ -305,6 +307,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         plot: bool = False,
         render: bool = False,
         upload: bool = True,
+        save2disk: bool = False,
         render_0th_epoch: bool = True,
         verbose: bool = True,
         show_cs: bool = False,
@@ -317,6 +320,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         self.X, self.y, self.xs = X, y, xs
         self.plot, self.render = plot, render
         self.upload = upload
+        self.save2disk = save2disk
         self.render_plot_metric = render_plot_metric
         self.maximal_error = maximal_error
         self.rnno_fn = rnno_fn
@@ -416,13 +420,13 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
             show_cs_root=self.show_cs_root,
         )
 
+        plot_path = parse_path(
+            self.path,
+            "plots",
+            filename("plot"),
+            extension="png",
+        )
         if self.plot:
-            plot_path = parse_path(
-                self.path,
-                "plots",
-                filename("plot"),
-                extension="png",
-            )
             import matplotlib.pyplot as plt
 
             plt.savefig(plot_path, dpi=300)
@@ -434,6 +438,11 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
                 logger.log_video(render_path, step=self.i_episode)
             if self.plot:
                 logger.log_image(plot_path)
+
+        if not self.save2disk:
+            for path in [render_path, plot_path]:
+                if Path(path).exists():
+                    os.system(f"rm {path}")
 
 
 class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
