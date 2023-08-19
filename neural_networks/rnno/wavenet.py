@@ -64,7 +64,7 @@ class _WaveNet(nn.Module):
             p = f * g
             out += Conv1D(self.residual_channels, kernel_size=1)(p)
             res += Conv1D(self.residual_channels, kernel_size=1)(p)
-        for _ in range(self.skip_channels):
+        for _ in range(self.skip_depth):
             out = Conv1D(self.skip_channels, kernel_size=1)(jax.nn.relu(out))
         out = Conv1D(self.final_channels, kernel_size=1)(jax.nn.relu(out))
         return out
