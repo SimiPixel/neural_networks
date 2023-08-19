@@ -38,22 +38,34 @@ class _WaveNet(nn.Module):
     residual_channels: int
     skip_channels: int
     final_channels: int
+    skip_depth: int = 1
+    filter_width: int = 2
+    initial_filter_width: int = 32
 
     @nn.compact
     def __call__(self, X):
         X = tree_utils.batch_concat(X, num_batch_dims=2)
         assert X.ndim == 3
 
-        X = Conv1D(self.residual_channels, kernel_size=32)(X)
+        X = Conv1D(self.residual_channels, kernel_size=self.initial_filter_width)(X)
         out = 0
         res = X
         for dilation in self.dilations:
-            f = jnp.tanh(Conv1D(self.residual_channels, dilation)(res))
-            g = jax.nn.sigmoid(Conv1D(self.residual_channels, dilation)(res))
+            f = jnp.tanh(
+                Conv1D(self.residual_channels, dilation, kernel_size=self.filter_width)(
+                    res
+                )
+            )
+            g = jax.nn.sigmoid(
+                Conv1D(self.residual_channels, dilation, kernel_size=self.filter_width)(
+                    res
+                )
+            )
             p = f * g
             out += Conv1D(self.residual_channels, kernel_size=1)(p)
             res += Conv1D(self.residual_channels, kernel_size=1)(p)
-        out = Conv1D(self.skip_channels, kernel_size=1)(jax.nn.relu(out))
+        for _ in range(self.skip_channels):
+            out = Conv1D(self.skip_channels, kernel_size=1)(jax.nn.relu(out))
         out = Conv1D(self.final_channels, kernel_size=1)(jax.nn.relu(out))
         return out
 
@@ -64,6 +76,9 @@ def wavenet(
     n_conv_layers_in_residual_layer: int = 11,
     residual_channels: int = 32,
     skip_channels: int = 512,
+    skip_depth: int = 1,
+    filter_width: int = 2,
+    initial_filter_width: int = 32,
 ):
     dilations = [
         2**i for i in range(n_conv_layers_in_residual_layer)
@@ -73,6 +88,9 @@ def wavenet(
         residual_channels,
         skip_channels,
         _num_links_parent_not_root(sys.link_parents) * 4,
+        skip_depth,
+        filter_width,
+        initial_filter_width,
     )
 
     def init(key, X):
