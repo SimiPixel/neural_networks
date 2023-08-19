@@ -144,7 +144,15 @@ def rnno_v2_flags(
         hk.set_state("inner_cell_state", state)
         return y
 
-    return forward
+    def init(key, X):
+        X = tree_utils.to_2d_if_3d(X, strict=True)
+        return forward.init(key, X)
+
+    def apply(params, state, X):
+        assert tree_utils.tree_ndim(X) == 3
+        return jax.vmap(forward.apply, in_axes=(None, 0, 0))(params, state, X)
+
+    return SimpleNamespace(init=init, apply=apply)
 
 
 class StackedRNNCell(hk.Module):

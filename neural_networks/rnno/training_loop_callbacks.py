@@ -45,7 +45,7 @@ def _build_eval_fn(
     `initial_state` has shape (pmap, vmap, state_dim)"""
 
     def eval_fn(params, state, X, y):
-        yhat, _ = jax.vmap(apply_fn, in_axes=(None, 0, 0))(params, state, X)
+        yhat, _ = apply_fn(params, state, X)
 
         values = {}
         for metric_name, (metric_fn, reduce_fn) in eval_metrices.items():
@@ -149,9 +149,7 @@ class DustinExperiment(TrainingLoopCallback):
         # has 3 segments; Needs its own state
         # delete batchsize dimension for init of params
         consume = jax.random.PRNGKey(1)
-        _, initial_state_dustin = network.init(
-            consume, tree_utils.tree_slice(self.sample[0], 0)
-        )
+        _, initial_state_dustin = network.init(consume, self.sample[0])
         batchsize = tree_utils.tree_shape(self.sample)
         initial_state_dustin = _repeat_state(initial_state_dustin, batchsize)
         self.eval_fn = _build_eval_fn(
@@ -259,8 +257,7 @@ def _build_eval_fn2(
     pmap_size,
     vmap_size,
 ):
-    @partial(jax.pmap, in_axes=(None, None, 0))
-    @partial(jax.vmap, in_axes=(None, None, 0))
+    @partial(jax.pmap, in_axes=(None, 0, 0))
     def pmap_vmap_apply(params, initial_state, X):
         return apply_fn(params, initial_state, X)[0]
 
@@ -328,12 +325,12 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
 
         # delete batchsize dimension for init of state
         consume = jax.random.PRNGKey(1)
-        _, initial_state = network.init(consume, tree_utils.tree_slice(X, 0))
+        _, initial_state = network.init(consume, X)
         batchsize = tree_utils.tree_shape(X)
         self.eval_fn = _build_eval_fn2(
             eval_metrices,
             network.apply,
-            initial_state,
+            _repeat_state(initial_state, batchsize),
             *distribute_batchsize(batchsize),
         )
         self.eval_every = eval_every

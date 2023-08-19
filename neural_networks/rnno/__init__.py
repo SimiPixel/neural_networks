@@ -21,3 +21,4 @@ from .training_loop_callbacks import (
     NanKillRunCallback,
     SaveParamsTrainingLoopCallback,
 )
+from .wavenet import wavenet

@@ -50,7 +50,7 @@ def _build_step_fn(
 
     @partial(jax.value_and_grad, has_aux=True)
     def loss_fn(params, state, X, y):
-        yhat, state = jax.vmap(apply_fn, in_axes=(None, 0, 0))(params, state, X)
+        yhat, state = apply_fn(params, state, X)
         pipe = lambda q, qhat: jnp.mean(jax.vmap(jax.vmap(metric_fn))(q, qhat))
         error_tree = jax.tree_map(pipe, y, yhat)
         return jnp.mean(tree_utils.batch_concat(error_tree, 0)), state
@@ -157,7 +157,7 @@ def train(
 
     params, initial_state = network.init(
         key_network,
-        tree_utils.tree_slice(X, 0),
+        X,
     )
     initial_state = _repeat_state(initial_state, batchsize)
 
