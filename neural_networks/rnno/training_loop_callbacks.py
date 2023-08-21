@@ -605,7 +605,7 @@ def make_utility_callbacks(
             kill_if_larger=kill_if_larger, consecutive_larger=consecutive_larger
         ),
         NanKillRunCallback(),
-        TimingKillRunCallback(23.5 * 3600),
+        TimingKillRunCallback(23.0 * 3600),
         LogEpisodeTrainingLoopCallback(),
     ]
     if params_path is not None:
