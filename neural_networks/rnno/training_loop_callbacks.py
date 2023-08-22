@@ -300,7 +300,7 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         render_plot_metric: str,
         eval_every: int = 5,
         render_plot_every: int = 50,
-        maximal_error: bool = True,
+        maximal_error: bool | list[bool] = True,
         plot: bool = False,
         render: bool = False,
         upload: bool = True,
@@ -319,7 +319,9 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         self.upload = upload
         self.save2disk = save2disk
         self.render_plot_metric = render_plot_metric
-        self.maximal_error = maximal_error
+        self.maximal_error = (
+            maximal_error if isinstance(maximal_error, list) else [maximal_error]
+        )
         self.rnno_fn = rnno_fn
         self.path = f"~/experiments/{exp_name}"
 
@@ -377,69 +379,71 @@ class EvalXy2TrainingLoopCallback(TrainingLoopCallback):
         else:
             params = self._params
 
-        reduce = jnp.argmax if self.maximal_error else jnp.argmin
-        idx = reduce(
-            jnp.mean(
-                tree_utils.batch_concat(self.per_seq[self.render_plot_metric]), axis=-1
+        for maximal_error in self.maximal_error:
+            reduce = jnp.argmax if maximal_error else jnp.argmin
+            idx = reduce(
+                jnp.mean(
+                    tree_utils.batch_concat(self.per_seq[self.render_plot_metric]),
+                    axis=-1,
+                )
             )
-        )
-        X, y, xs = tree_utils.tree_slice((self.X, self.y, self.xs), idx)
+            X, y, xs = tree_utils.tree_slice((self.X, self.y, self.xs), idx)
 
-        def filename(prefix: str):
-            return (
-                f"{prefix}_{self.metric_identifier}_{self.render_plot_metric}_"
-                f"idx={idx}_episode={self.i_episode}_maxError={int(self.maximal_error)}"
+            def filename(prefix: str):
+                return (
+                    f"{prefix}_{self.metric_identifier}_{self.render_plot_metric}_"
+                    f"idx={idx}_episode={self.i_episode}_maxError={int(maximal_error)}"
+                )
+
+            render_path = parse_path(
+                self.path,
+                "videos",
+                filename("animation"),
+                extension="mp4",
             )
 
-        render_path = parse_path(
-            self.path,
-            "videos",
-            filename("animation"),
-            extension="mp4",
-        )
+            if self.verbose:
+                print(f"--- EvalFnCallback {self.metric_identifier} --- ")
 
-        if self.verbose:
-            print(f"--- EvalFnCallback {self.metric_identifier} --- ")
+            pipeline.predict(
+                self.sys_noimu,
+                self.rnno_fn,
+                X,
+                y,
+                xs,
+                self.sys_xs,
+                params,
+                plot=self.plot,
+                render=self.render,
+                render_path=render_path,
+                verbose=self.verbose,
+                show_cs=self.show_cs,
+                show_cs_root=self.show_cs_root,
+            )
 
-        pipeline.predict(
-            self.sys_noimu,
-            self.rnno_fn,
-            X,
-            y,
-            xs,
-            self.sys_xs,
-            params,
-            plot=self.plot,
-            render=self.render,
-            render_path=render_path,
-            verbose=self.verbose,
-            show_cs=self.show_cs,
-            show_cs_root=self.show_cs_root,
-        )
-
-        plot_path = parse_path(
-            self.path,
-            "plots",
-            filename("plot"),
-            extension="png",
-        )
-        if self.plot:
-            import matplotlib.pyplot as plt
-
-            plt.savefig(plot_path, dpi=300)
-            plt.close()
-
-        if self.upload:
-            logger = _find_multimedia_logger(self._loggers)
-            if self.render:
-                logger.log_video(render_path, step=self.i_episode)
+            plot_path = parse_path(
+                self.path,
+                "plots",
+                filename("plot"),
+                extension="png",
+            )
             if self.plot:
-                logger.log_image(plot_path)
+                import matplotlib.pyplot as plt
 
-        if not self.save2disk:
-            for path in [render_path, plot_path]:
-                if Path(path).exists():
-                    os.system(f"rm {path}")
+                plt.savefig(plot_path, dpi=300)
+                plt.close()
+
+            if self.upload:
+                logger = _find_multimedia_logger(self._loggers)
+                if self.render:
+                    logger.log_video(render_path, step=self.i_episode)
+                if self.plot:
+                    logger.log_image(plot_path)
+
+            if not self.save2disk:
+                for path in [render_path, plot_path]:
+                    if Path(path).exists():
+                        os.system(f"rm {path}")
 
 
 class SaveParamsTrainingLoopCallback(TrainingLoopCallback):
