@@ -595,7 +595,10 @@ class TimingKillRunCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
-        if (time.time() - self.t0) > self.max_run_time_seconds:
+        runtime = time.time() - self.t0
+        if runtime > self.max_run_time_seconds:
+            runtime_h = runtime / 3600
+            print(f"Run is killed due to timing. Current runtime is {runtime_h}h.")
             send_kill_run_signal()
 
 

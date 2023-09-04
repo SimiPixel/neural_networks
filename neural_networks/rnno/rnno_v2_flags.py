@@ -4,7 +4,8 @@ import haiku as hk
 import jax
 import jax.numpy as jnp
 import tree_utils
-from x_xy import base, scan
+from x_xy import base
+from x_xy import scan
 from x_xy.maths import safe_normalize
 
 
@@ -55,13 +56,9 @@ def _make_rnno_cell_apply_fn(
         mailbox = jax.vmap(accumulate_message)(jnp.arange(sys.num_links()))
 
         def cell_input(_, __, i: int, p: int, name: str):
-            local_measurement = (
-                jnp.concatenate((inputs[name]["acc"], inputs[name]["gyr"]))
-                if name in inputs
-                else jnp.zeros((6,))
-            )
-            local_cell_input = tree_utils.batch_concat(
-                (local_measurement, msg[p], mailbox[i]), num_batch_dims=0
+            assert name in inputs, f"name: {name} not found in {list(inputs.keys())}"
+            local_cell_input = tree_utils.batch_concat_acme(
+                (inputs[name], msg[p], mailbox[i]), num_batch_dims=0
             )
             return local_cell_input
 
