@@ -2,12 +2,13 @@ import random
 from typing import Optional
 
 import jax
+from optax import LookaheadParams
 import tqdm
 import tree_utils
-from optax import LookaheadParams
 from x_xy.algorithms import Generator
 
-from neural_networks.logging import Logger, n_params
+from neural_networks.logging import Logger
+from neural_networks.logging import n_params
 
 _KILL_RUN = False
 

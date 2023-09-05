@@ -1,37 +1,33 @@
-import os
-import time
 from collections import deque
 from functools import partial
+import os
 from pathlib import Path
+import time
 from typing import Callable, Optional, Tuple
 
 import haiku as hk
 import jax
 import jax.numpy as jnp
-import tree_utils
 from optax import LookaheadParams
-from x_xy import base, maths
+import tree_utils
+from x_xy import base
+from x_xy import maths
 from x_xy.io import load_sys_from_str
 from x_xy.subpkgs import pipeline
-from x_xy.utils import (
-    distribute_batchsize,
-    expand_batchsize,
-    merge_batchsize,
-    parse_path,
-)
+from x_xy.utils import distribute_batchsize
+from x_xy.utils import expand_batchsize
+from x_xy.utils import merge_batchsize
+from x_xy.utils import parse_path
 
 from neural_networks.io_params import save
-from neural_networks.logging import Logger, MultimediaLogger
-from neural_networks.rnno import (
-    dustin_exp_xml_seg1,
-    dustin_exp_xml_seg2,
-    dustin_exp_xml_seg3,
-    dustin_exp_Xy,
-)
-from neural_networks.rnno.training_loop import (
-    TrainingLoopCallback,
-    send_kill_run_signal,
-)
+from neural_networks.logging import Logger
+from neural_networks.logging import MultimediaLogger
+from neural_networks.rnno import dustin_exp_xml_seg1
+from neural_networks.rnno import dustin_exp_xml_seg2
+from neural_networks.rnno import dustin_exp_xml_seg3
+from neural_networks.rnno import dustin_exp_Xy
+from neural_networks.rnno.training_loop import send_kill_run_signal
+from neural_networks.rnno.training_loop import TrainingLoopCallback
 
 
 def _build_eval_fn(
@@ -134,6 +130,7 @@ class DustinExperiment(TrainingLoopCallback):
         metric_identifier: str = "dustin_exp",
         anchor: str = "seg1",
         q_inv: bool = True,
+        with_seg2: bool = False,
     ):
         xml_str_dustin = {
             "seg1": dustin_exp_xml_seg1,
@@ -142,7 +139,7 @@ class DustinExperiment(TrainingLoopCallback):
         }[anchor]
         network = rnno_fn(load_sys_from_str(xml_str_dustin))
 
-        X, y = dustin_exp_Xy(anchor, q_inv)
+        X, y = dustin_exp_Xy(anchor, q_inv, with_seg2=with_seg2)
         self.sample = X, y
 
         # build network for dustin experiment which always

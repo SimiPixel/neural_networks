@@ -62,7 +62,7 @@ def _remove_nan_values(dd):
 
 
 def dustin_exp_Xy(
-    anchor: str = "seg1", q_inv: bool = True
+    anchor: str = "seg1", q_inv: bool = True, with_seg2: bool = False
 ) -> Tuple[jax.Array, jax.Array]:
     start_indices = jnp.array([start for start in range(3000, 4200, 150)])
 
@@ -79,6 +79,12 @@ def dustin_exp_Xy(
         "seg1": {"acc": dd["acc1"], "gyr": dd["gyr1"]},
         "seg3": {"acc": dd["acc3"], "gyr": dd["gyr3"]},
     }
+    if with_seg2:
+        X["seg2"] = {
+            "acc": jnp.zeros_like(dd["acc1"]),
+            "gyr": jnp.zeros_like(dd["gyr1"]),
+        }
+
     y = {
         "seg1": {"seg2": qrel(dd["q1"], dd["q2"]), "seg3": qrel(dd["q2"], dd["q3"])},
         "seg2": {"seg1": qrel(dd["q2"], dd["q1"]), "seg3": qrel(dd["q2"], dd["q3"])},
