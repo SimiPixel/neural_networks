@@ -5,12 +5,12 @@ import jax
 import jax.numpy as jnp
 import tree_utils
 from x_xy import base
-from x_xy import scan
+from x_xy import scan_sys
 from x_xy.maths import safe_normalize
 
 
 def _tree(sys, f):
-    return scan.tree(
+    return scan_sys(
         sys,
         f,
         "lll",
