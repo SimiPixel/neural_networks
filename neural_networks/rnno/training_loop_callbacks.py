@@ -566,6 +566,9 @@ class NanKillRunCallback(TrainingLoopCallback):
 
 
 class LogEpisodeTrainingLoopCallback(TrainingLoopCallback):
+    def __init__(self, kill_after_episode: Optional[int] = None) -> None:
+        self.kill_after_episode = kill_after_episode
+
     def after_training_step(
         self,
         i_episode: int,
@@ -575,6 +578,10 @@ class LogEpisodeTrainingLoopCallback(TrainingLoopCallback):
         sample_eval: dict,
         loggers: list[Logger],
     ) -> None:
+        if self.kill_after_episode is not None and (
+            i_episode >= self.kill_after_episode
+        ):
+            send_kill_run_signal()
         metrices.update({"i_episode": i_episode})
 
 
@@ -603,6 +610,7 @@ def make_utility_callbacks(
     params_path=None,
     kill_if_larger: Optional[float] = None,
     consecutive_larger: int = 1,
+    kill_after_episode: Optional[int] = None,
 ) -> list[TrainingLoopCallback]:
     callbacks = [
         LogGradsTrainingLoopCallBack(
@@ -610,7 +618,7 @@ def make_utility_callbacks(
         ),
         NanKillRunCallback(),
         TimingKillRunCallback(23.0 * 3600),
-        LogEpisodeTrainingLoopCallback(),
+        LogEpisodeTrainingLoopCallback(kill_after_episode),
     ]
     if params_path is not None:
         callbacks.append(SaveParamsTrainingLoopCallback(params_path))
