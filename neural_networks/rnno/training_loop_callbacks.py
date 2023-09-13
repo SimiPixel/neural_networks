@@ -12,8 +12,8 @@ from optax import LookaheadParams
 import tree_utils
 from x_xy import base
 from x_xy import maths
+from x_xy.experimental import pipeline
 from x_xy.io import load_sys_from_str
-from x_xy.subpkgs import pipeline
 from x_xy.utils import distribute_batchsize
 from x_xy.utils import expand_batchsize
 from x_xy.utils import merge_batchsize
